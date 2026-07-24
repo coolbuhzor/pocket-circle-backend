@@ -4,10 +4,192 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
   provider = "postgresql"
+}
+// model User {
+//   id            String   @id @default(uuid())
+//   name          String
+//   email         String   @unique
+//   bankName      String
+//   accountNumber String
+//   createdAt     DateTime @default(now())
+// }
+
+enum Role {
+  admin
+  member
+}
+
+enum Frequency {
+  weekly
+  biweekly
+  monthly
+}
+
+enum CycleStatus {
+  active
+  completed
+}
+
+enum ContributionStatus {
+  pending
+  confirmed
+  disputed
+}
+
+enum InviteStatus {
+  active
+  expired
+  accepted
+}
+
+enum ActivityType {
+  member_joined
+  receipt_uploaded
+  payment_confirmed
+  payment_disputed
+  reminder_sent
+  cycle_started
+  cycle_completed
+  turn_changed
+}
+
+enum NotificationType {
+  your_turn
+  receipt_uploaded
+  payment_confirmed
+  payment_disputed
+  reminder
+  invite_accepted
+  cycle_started
+}
+
+model User {
+  id              String    @id @default(uuid())
+  name            String
+  email           String    @unique
+  password        String
+  bankName        String
+  accountNumber   String
+  notifyEmail     Boolean   @default(true)
+  notifyWhatsApp  Boolean   @default(true)
+  isSuperAdmin    Boolean   @default(false)
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  memberships     GroupMember[]
+  contributions   Contribution[]     @relation("payer")
+  reviewed        Contribution[]     @relation("reviewer")
+  collectedCycles Cycle[]
+  invitesSent     Invite[]
+  activity        ActivityEvent[]    @relation("actor")
+  targetedIn      ActivityEvent[]    @relation("target")
+  notifications   Notification[]
+}
+
+model Group {
+  id                 String     @id @default(uuid())
+  name               String
+  contributionAmount Int
+  frequency          Frequency  @default(monthly)
+  createdAt          DateTime   @default(now())
+
+  members    GroupMember[]
+  cycles     Cycle[]
+  invites    Invite[]
+  activity   ActivityEvent[]
+  notifications Notification[]
+}
+
+model GroupMember {
+  groupId     String
+  userId      String
+  role        Role     @default(member)
+  payoutOrder Int
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+}
+
+model Cycle {
+  id              String      @id @default(uuid())
+  groupId         String
+  cycleNumber     Int
+  collectorUserId String
+  periodStart     DateTime
+  periodEnd       DateTime
+  status          CycleStatus @default(active)
+
+  group         Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  collector     User           @relation(fields: [collectorUserId], references: [id])
+  contributions Contribution[]
+  activity      ActivityEvent[]
+}
+
+model Contribution {
+  id               String              @id @default(uuid())
+  cycleId          String
+  payerUserId      String
+  amount           Int
+  receiptUrl       String?
+  note             String?
+  status           ContributionStatus  @default(pending)
+  disputeReason    String?
+  submittedAt      DateTime?
+  reviewedAt       DateTime?
+  reviewedByUserId String?
+
+  cycle    Cycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  payer    User  @relation("payer", fields: [payerUserId], references: [id])
+  reviewer User? @relation("reviewer", fields: [reviewedByUserId], references: [id])
+}
+
+model Invite {
+  token           String       @id @default(uuid())
+  groupId         String
+  invitedByUserId String
+  expiresAt       DateTime
+  status          InviteStatus @default(active)
+
+  group      Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  invitedBy  User  @relation(fields: [invitedByUserId], references: [id])
+}
+
+model ActivityEvent {
+  id             String       @id @default(uuid())
+  groupId        String
+  type           ActivityType
+  actorUserId    String
+  targetUserId   String?
+  cycleId        String?
+  message        String
+  createdAt      DateTime     @default(now())
+
+  group  Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  actor  User   @relation("actor", fields: [actorUserId], references: [id])
+  target User?  @relation("target", fields: [targetUserId], references: [id])
+  cycle  Cycle? @relation(fields: [cycleId], references: [id])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  groupId   String?
+  type      NotificationType
+  title     String
+  body      String
+  href      String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group? @relation(fields: [groupId], references: [id])
 }
