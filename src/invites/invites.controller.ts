@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
@@ -12,6 +13,7 @@ import {
 } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { GroupAdminGuard } from '../common/guards/group-admin.guard';
+import { CreateInviteDto } from './dto/create-invite.dto';
 import { InvitesService } from './invites.service';
 
 @ApiTags('Invites')
@@ -23,8 +25,12 @@ export class InvitesController {
   @UseGuards(GroupAdminGuard)
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Create an invite link (admin)' })
-  create(@Param('id') groupId: string, @CurrentUser() user: AuthUser) {
-    return this.invitesService.create(groupId, user.id);
+  create(
+    @Param('id') groupId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateInviteDto,
+  ) {
+    return this.invitesService.create(groupId, user.id, dto);
   }
 
   @Public()

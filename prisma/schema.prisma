@@ -157,6 +157,7 @@ model Invite {
   token           String       @id @default(uuid())
   groupId         String
   invitedByUserId String
+  inviteeEmail    String?
   expiresAt       DateTime
   status          InviteStatus @default(active)
 
