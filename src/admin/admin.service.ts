@@ -5,6 +5,7 @@ import {
   InviteStatus,
 } from '../../generated/prisma/enums';
 import { Prisma } from '../../generated/prisma/client';
+import { deriveInviteEffectiveStatus } from '../common/helpers/invite-effective-status';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminListQueryDto } from './dto/admin-list-query.dto';
 
@@ -315,6 +316,12 @@ export class AdminService {
             target: { select: { id: true, name: true } },
           },
         },
+        invites: {
+          orderBy: { expiresAt: 'desc' },
+          include: {
+            invitedBy: { select: { id: true, name: true } },
+          },
+        },
       },
     });
 
@@ -322,7 +329,13 @@ export class AdminService {
       throw new NotFoundException('Group not found');
     }
 
-    return group;
+    return {
+      ...group,
+      invites: group.invites.map((invite) => ({
+        ...invite,
+        effectiveStatus: deriveInviteEffectiveStatus(invite),
+      })),
+    };
   }
 
   // ─── Stats ───────────────────────────────────────────────────────────────

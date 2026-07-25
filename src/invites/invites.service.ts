@@ -12,6 +12,7 @@ import {
   Role,
 } from '../../generated/prisma/enums';
 import { ActivityService } from '../activity/activity.service';
+import { deriveInviteEffectiveStatus } from '../common/helpers/invite-effective-status';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInviteDto } from './dto/create-invite.dto';
@@ -101,6 +102,34 @@ export class InvitesService {
       inviteeEmail: invite.inviteeEmail,
       matchedExistingUser,
     };
+  }
+
+  async listForGroup(groupId: string) {
+    const group = await this.prisma.group.findUnique({
+      where: { id: groupId },
+      select: { id: true },
+    });
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+
+    const invites = await this.prisma.invite.findMany({
+      where: { groupId },
+      include: {
+        invitedBy: { select: { id: true, name: true } },
+      },
+      orderBy: { expiresAt: 'desc' },
+    });
+
+    return invites.map((invite) => ({
+      token: invite.token,
+      inviteeEmail: invite.inviteeEmail,
+      invitedByUserId: invite.invitedByUserId,
+      invitedBy: invite.invitedBy,
+      expiresAt: invite.expiresAt,
+      status: invite.status,
+      effectiveStatus: deriveInviteEffectiveStatus(invite),
+    }));
   }
 
   async view(token: string) {

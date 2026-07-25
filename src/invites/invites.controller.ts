@@ -33,6 +33,14 @@ export class InvitesController {
     return this.invitesService.create(groupId, user.id, dto);
   }
 
+  @Get('groups/:id/invites')
+  @UseGuards(GroupAdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'List invites for a group (admin)' })
+  listForGroup(@Param('id') groupId: string) {
+    return this.invitesService.listForGroup(groupId);
+  }
+
   @Public()
   @Get('invites/:token')
   @ApiOperation({ summary: 'View invite details (public)' })
