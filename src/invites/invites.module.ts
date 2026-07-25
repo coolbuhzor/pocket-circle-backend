@@ -8,5 +8,6 @@ import { InvitesService } from './invites.service';
   imports: [ActivityModule, NotificationsModule],
   controllers: [InvitesController],
   providers: [InvitesService],
+  exports: [InvitesService],
 })
 export class InvitesModule {}

@@ -109,6 +109,11 @@ export class NotificationsService {
           title: 'Invite accepted',
           body: `${actor} accepted your invite to ${group}.`,
         };
+      case NotificationType.group_invite:
+        return {
+          title: 'Group invite',
+          body: `${actor} invited you to join ${group}.`,
+        };
       case NotificationType.cycle_started:
         return {
           title: 'New cycle started',

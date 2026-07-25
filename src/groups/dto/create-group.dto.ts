@@ -1,7 +1,17 @@
 import { Frequency } from '../../../generated/prisma/enums';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsString, Min, MinLength } from 'class-validator';
+import {
+  ArrayUnique,
+  IsArray,
+  IsEmail,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class CreateGroupDto {
   @ApiProperty({ example: 'Family Ajo' })
@@ -18,4 +28,16 @@ export class CreateGroupDto {
   @ApiProperty({ enum: Frequency, example: Frequency.monthly })
   @IsEnum(Frequency)
   frequency: Frequency;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['friend@example.com'],
+    description:
+      'Optional emails to invite. Creates invite tokens (creator email is skipped).',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsEmail({}, { each: true })
+  memberEmails?: string[];
 }
