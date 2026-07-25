@@ -15,11 +15,14 @@ describe('Invites (e2e)', () => {
   const suffix = Date.now();
   const adminEmail = `admin.invite.${suffix}@example.com`;
   const inviteeEmail = `invitee.${suffix}@example.com`;
+  const outsiderEmail = `outsider.${suffix}@example.com`;
   const password = 'password123';
 
   let adminToken: string;
   let inviteeToken: string;
+  let outsiderToken: string;
   let groupId: string;
+  let memberEmailsGroupId: string | undefined;
   let createdInviteToken: string;
 
   beforeAll(async () => {
@@ -43,53 +46,73 @@ describe('Invites (e2e)', () => {
   });
 
   afterAll(async () => {
-    if (groupId) {
-      await prisma.notification.deleteMany({ where: { groupId } });
-      await prisma.invite.deleteMany({ where: { groupId } });
-      await prisma.groupMember.deleteMany({ where: { groupId } });
-      await prisma.activityEvent.deleteMany({ where: { groupId } });
-      await prisma.group.deleteMany({ where: { id: groupId } }).catch(() => undefined);
+    const groupIds = [groupId, memberEmailsGroupId].filter(
+      (id): id is string => Boolean(id),
+    );
+
+    for (const id of groupIds) {
+      await prisma.notification.deleteMany({ where: { groupId: id } });
+      await prisma.invite.deleteMany({ where: { groupId: id } });
+      await prisma.groupMember.deleteMany({ where: { groupId: id } });
+      await prisma.activityEvent.deleteMany({ where: { groupId: id } });
+      await prisma.cycle.deleteMany({ where: { groupId: id } });
+      await prisma.group.deleteMany({ where: { id } }).catch(() => undefined);
     }
 
     await prisma.user.deleteMany({
-      where: { email: { in: [adminEmail, inviteeEmail] } },
+      where: {
+        email: { in: [adminEmail, inviteeEmail, outsiderEmail] },
+      },
     });
 
     await app.close();
   });
 
-  it('signs up admin and invitee users', async () => {
-    const adminRes = await request(app.getHttpServer())
-      .post('/auth/signup')
-      .send({
-        firstName: 'Invite',
-        lastName: 'Admin',
-        email: adminEmail,
-        password,
-        bankName: 'GTBank',
-        bankCode: '058',
-        accountNumber: '0123456789',
-      })
-      .expect(201);
+  it('signs up admin, invitee, and outsider users', async () => {
+    const signup = async (
+      firstName: string,
+      lastName: string,
+      email: string,
+      bankCode: string,
+      accountNumber: string,
+    ) => {
+      const res = await request(app.getHttpServer())
+        .post('/auth/signup')
+        .send({
+          firstName,
+          lastName,
+          email,
+          password,
+          bankName: 'GTBank',
+          bankCode,
+          accountNumber,
+        })
+        .expect(201);
+      expect(res.body.accessToken).toBeDefined();
+      return res.body.accessToken as string;
+    };
 
-    adminToken = adminRes.body.accessToken;
-    expect(adminToken).toBeDefined();
-
-    const inviteeRes = await request(app.getHttpServer())
-      .post('/auth/signup')
-      .send({
-        firstName: 'Invitee',
-        lastName: 'User',
-        email: inviteeEmail,
-        password,
-        bankName: 'Access',
-        bankCode: '044',
-        accountNumber: '0987654321',
-      })
-      .expect(201);
-
-    inviteeToken = inviteeRes.body.accessToken;
-    expect(inviteeToken).toBeDefined();
+    adminToken = await signup(
+      'Invite',
+      'Admin',
+      adminEmail,
+      '058',
+      '0123456789',
+    );
+    inviteeToken = await signup(
+      'Invitee',
+      'User',
+      inviteeEmail,
+      '044',
+      '0987654321',
+    );
+    outsiderToken = await signup(
+      'Outsider',
+      'User',
+      outsiderEmail,
+      '033',
+      '1111222233',
+    );
   });
 
   it('creates a group as admin', async () => {
@@ -105,6 +128,49 @@ describe('Invites (e2e)', () => {
 
     groupId = res.body.id;
     expect(groupId).toBeDefined();
+    expect(res.body.invitesSent).toEqual([]);
+  });
+
+  it('creates a group with memberEmails and reuses invite logic', async () => {
+    const unknownEmail = `nobody.create.${suffix}@example.com`;
+
+    const res = await request(app.getHttpServer())
+      .post('/groups')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: `Member Emails Group ${suffix}`,
+        contributionAmount: 2500,
+        frequency: Frequency.weekly,
+        memberEmails: [
+          inviteeEmail,
+          adminEmail,
+          unknownEmail,
+          inviteeEmail.toUpperCase(),
+        ],
+      })
+      .expect(201);
+
+    memberEmailsGroupId = res.body.id;
+    expect(res.body.invitesSent).toEqual(
+      expect.arrayContaining([
+        { email: inviteeEmail, matchedExistingUser: true },
+        { email: unknownEmail, matchedExistingUser: false },
+      ]),
+    );
+    expect(res.body.invitesSent).toHaveLength(2);
+    expect(
+      res.body.invitesSent.some(
+        (row: { email: string }) => row.email === adminEmail,
+      ),
+    ).toBe(false);
+
+    const notification = await prisma.notification.findFirst({
+      where: {
+        type: 'group_invite',
+        groupId: memberEmailsGroupId,
+      },
+    });
+    expect(notification).not.toBeNull();
   });
 
   it('creates an invite for an existing user and notifies them', async () => {
@@ -155,7 +221,18 @@ describe('Invites (e2e)', () => {
     });
   });
 
-  it('allows public view and invitee accept', async () => {
+  it('rejects accept when logged-in email does not match inviteeEmail', async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/invites/${createdInviteToken}/accept`)
+      .set('Authorization', `Bearer ${outsiderToken}`)
+      .expect(403);
+
+    expect(res.body.message).toContain(
+      'This invite was sent to a different email address',
+    );
+  });
+
+  it('allows public view and matching invitee accept', async () => {
     const view = await request(app.getHttpServer())
       .get(`/invites/${createdInviteToken}`)
       .expect(200);
@@ -180,6 +257,21 @@ describe('Invites (e2e)', () => {
       status: InviteStatus.accepted,
       effectiveStatus: 'accepted',
     });
+  });
+
+  it('allows any logged-in user to accept a link-only invite', async () => {
+    const createRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+      .expect(201);
+
+    expect(createRes.body.inviteeEmail).toBeNull();
+
+    await request(app.getHttpServer())
+      .post(`/invites/${createRes.body.token}/accept`)
+      .set('Authorization', `Bearer ${outsiderToken}`)
+      .expect(201);
   });
 
   it('returns matchedExistingUser false for unknown email', async () => {

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -171,7 +172,7 @@ export class InvitesService {
     };
   }
 
-  async accept(token: string, userId: string) {
+  async accept(token: string, user: { id: string; email: string }) {
     const invite = await this.prisma.invite.findUnique({
       where: { token },
       include: {
@@ -196,9 +197,21 @@ export class InvitesService {
       throw new BadRequestException('This invite has expired');
     }
 
+    // Targeted invites may only be accepted by the intended email.
+    // Link-only invites (inviteeEmail null) stay open to whoever has the link.
+    if (
+      invite.inviteeEmail &&
+      invite.inviteeEmail.toLowerCase().trim() !==
+        user.email.toLowerCase().trim()
+    ) {
+      throw new ForbiddenException(
+        'This invite was sent to a different email address. Log in with that email to accept it, or ask the group admin to send you a new invite.',
+      );
+    }
+
     const existing = await this.prisma.groupMember.findUnique({
       where: {
-        groupId_userId: { groupId: invite.groupId, userId },
+        groupId_userId: { groupId: invite.groupId, userId: user.id },
       },
     });
     if (existing) {
@@ -215,7 +228,7 @@ export class InvitesService {
       const member = await tx.groupMember.create({
         data: {
           groupId: invite.groupId,
-          userId,
+          userId: user.id,
           role: Role.member,
           payoutOrder,
         },
@@ -237,7 +250,7 @@ export class InvitesService {
     await this.activityService.log(
       invite.groupId,
       ActivityType.member_joined,
-      userId,
+      user.id,
       { actorName: memberName },
     );
 

@@ -1,18 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import {
-  CycleStatus,
-  NotificationType,
-  Role,
-} from '../../generated/prisma/enums';
+import { CycleStatus, Role } from '../../generated/prisma/enums';
 import { computePeriodEnd } from '../common/helpers/compute-period-end';
 import { deriveContributionDisplayStatus } from '../common/helpers/contribution-display-status';
-import { getFullName, withDisplayName } from '../common/helpers/user-name';
-import {
-  userBankSelect,
-  userNameSelect,
-} from '../common/helpers/user-select';
+import { withDisplayName } from '../common/helpers/user-name';
+import { userBankSelect } from '../common/helpers/user-select';
 import { InvitesService } from '../invites/invites.service';
-import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { UpdateGroupDto } from './dto/update-group.dto';
@@ -110,7 +102,6 @@ export class GroupsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly invitesService: InvitesService,
-    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(userId: string, dto: CreateGroupDto) {
@@ -119,7 +110,7 @@ export class GroupsService {
 
     const creator = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { email: true, ...userNameSelect },
+      select: { email: true },
     });
 
     const group = await this.prisma.$transaction(async (tx) => {
@@ -149,7 +140,7 @@ export class GroupsService {
       });
     });
 
-    const creatorEmail = creator.email.toLowerCase();
+    const creatorEmail = creator.email.toLowerCase().trim();
     const emails = [
       ...new Set(
         (dto.memberEmails ?? [])
@@ -158,44 +149,24 @@ export class GroupsService {
       ),
     ].filter((email) => email !== creatorEmail);
 
-    const invites: Array<{
+    const invitesSent: Array<{
       email: string;
-      token: string;
-      expiresAt: Date;
-      userExists: boolean;
+      matchedExistingUser: boolean;
     }> = [];
 
     for (const email of emails) {
-      const invite = await this.invitesService.create(group.id, userId);
-      const existingUser = await this.prisma.user.findUnique({
-        where: { email },
-        select: { id: true },
-      });
-
-      if (existingUser) {
-        await this.notificationsService.notify(
-          existingUser.id,
-          NotificationType.group_invite,
-          {
-            groupId: group.id,
-            groupName: group.name,
-            actorName: getFullName(creator),
-            href: `/invites/${invite.token}`,
-          },
-        );
-      }
-
-      invites.push({
+      const invite = await this.invitesService.create(group.id, userId, {
         email,
-        token: invite.token,
-        expiresAt: invite.expiresAt,
-        userExists: Boolean(existingUser),
+      });
+      invitesSent.push({
+        email: invite.inviteeEmail ?? email,
+        matchedExistingUser: invite.matchedExistingUser,
       });
     }
 
     return {
       ...this.enrichGroup(group as GroupDetail, userId),
-      invites,
+      invitesSent,
     };
   }
 
