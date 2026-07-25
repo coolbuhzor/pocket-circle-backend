@@ -33,7 +33,7 @@ export class CreateGroupDto {
     type: [String],
     example: ['friend@example.com'],
     description:
-      'Optional emails to invite. Creates invite tokens (creator email is skipped).',
+      'Optional emails to invite at creation. Deduped; creator email is skipped. Uses the same invite + notification flow as POST /groups/:id/invites.',
   })
   @IsOptional()
   @IsArray()

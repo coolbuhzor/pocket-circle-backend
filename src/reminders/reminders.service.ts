@@ -8,6 +8,8 @@ import {
   NotificationType,
 } from '../../generated/prisma/enums';
 import { ActivityService } from '../activity/activity.service';
+import { getFullName } from '../common/helpers/user-name';
+import { userNameSelect } from '../common/helpers/user-select';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -35,7 +37,7 @@ export class RemindersService {
       where: {
         groupId_userId: { groupId: cycle.groupId, userId: toUserId },
       },
-      include: { user: { select: { id: true, name: true } } },
+      include: { user: { select: { id: true, ...userNameSelect } } },
     });
     if (!membership) {
       throw new NotFoundException('Target user is not a group member');
@@ -43,8 +45,10 @@ export class RemindersService {
 
     const actor = await this.prisma.user.findUnique({
       where: { id: actorUserId },
-      select: { name: true },
+      select: userNameSelect,
     });
+
+    const actorName = actor ? getFullName(actor) : undefined;
 
     const activity = await this.activityService.log(
       cycle.groupId,
@@ -53,8 +57,8 @@ export class RemindersService {
       {
         cycleId,
         targetUserId: toUserId,
-        actorName: actor?.name,
-        targetName: membership.user.name,
+        actorName,
+        targetName: getFullName(membership.user),
       },
     );
 
@@ -64,7 +68,7 @@ export class RemindersService {
       {
         groupId: cycle.groupId,
         groupName: cycle.group.name,
-        actorName: actor?.name,
+        actorName,
         href: `/groups/${cycle.groupId}`,
       },
     );

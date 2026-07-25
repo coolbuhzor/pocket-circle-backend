@@ -52,6 +52,6 @@ export class InvitesController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Accept an invite' })
   accept(@Param('token') token: string, @CurrentUser() user: AuthUser) {
-    return this.invitesService.accept(token, user.id);
+    return this.invitesService.accept(token, user);
   }
 }

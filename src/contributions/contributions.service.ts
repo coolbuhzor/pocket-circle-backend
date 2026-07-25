@@ -10,6 +10,8 @@ import {
   NotificationType,
 } from '../../generated/prisma/enums';
 import { ActivityService } from '../activity/activity.service';
+import { getFullName, withDisplayName } from '../common/helpers/user-name';
+import { userNameSelect, userSummarySelect } from '../common/helpers/user-select';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService, UploadedFile } from '../storage/storage.service';
@@ -24,16 +26,20 @@ export class ContributionsService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  findByCycle(cycleId: string) {
-    return this.prisma.contribution.findMany({
+  async findByCycle(cycleId: string) {
+    const contributions = await this.prisma.contribution.findMany({
       where: { cycleId },
       include: {
         payer: {
-          select: { id: true, name: true, email: true },
+          select: userSummarySelect,
         },
       },
       orderBy: { submittedAt: 'desc' },
     });
+    return contributions.map((c) => ({
+      ...c,
+      payer: withDisplayName(c.payer),
+    }));
   }
 
   async upload(
@@ -46,7 +52,7 @@ export class ContributionsService {
       where: { id: cycleId },
       include: {
         group: { select: { id: true, name: true } },
-        collector: { select: { id: true, name: true } },
+        collector: { select: { id: true, ...userNameSelect } },
       },
     });
     if (!cycle || cycle.status !== CycleStatus.active) {
@@ -97,7 +103,7 @@ export class ContributionsService {
 
     const payer = await this.prisma.user.findUnique({
       where: { id: payerUserId },
-      select: { name: true },
+      select: userNameSelect,
     });
 
     await this.activityService.log(
@@ -106,7 +112,7 @@ export class ContributionsService {
       payerUserId,
       {
         cycleId,
-        actorName: payer?.name,
+        actorName: payer ? getFullName(payer) : undefined,
       },
     );
 
@@ -116,7 +122,7 @@ export class ContributionsService {
       {
         groupId: cycle.groupId,
         groupName: cycle.group.name,
-        actorName: payer?.name,
+        actorName: payer ? getFullName(payer) : undefined,
         href: `/groups/${cycle.groupId}`,
       },
     );
@@ -131,7 +137,7 @@ export class ContributionsService {
         cycle: {
           include: { group: { select: { id: true, name: true } } },
         },
-        payer: { select: { id: true, name: true } },
+        payer: { select: { id: true, ...userNameSelect } },
       },
     });
     if (!contribution) {
@@ -150,7 +156,7 @@ export class ContributionsService {
 
     const reviewer = await this.prisma.user.findUnique({
       where: { id: reviewerUserId },
-      select: { name: true },
+      select: userNameSelect,
     });
 
     await this.activityService.log(
@@ -160,8 +166,8 @@ export class ContributionsService {
       {
         cycleId: contribution.cycleId,
         targetUserId: contribution.payerUserId,
-        actorName: reviewer?.name,
-        targetName: contribution.payer.name,
+        actorName: reviewer ? getFullName(reviewer) : undefined,
+        targetName: getFullName(contribution.payer),
       },
     );
 
@@ -189,7 +195,7 @@ export class ContributionsService {
         cycle: {
           include: { group: { select: { id: true, name: true } } },
         },
-        payer: { select: { id: true, name: true } },
+        payer: { select: { id: true, ...userNameSelect } },
       },
     });
     if (!contribution) {
@@ -208,7 +214,7 @@ export class ContributionsService {
 
     const reviewer = await this.prisma.user.findUnique({
       where: { id: reviewerUserId },
-      select: { name: true },
+      select: userNameSelect,
     });
 
     await this.activityService.log(
@@ -218,8 +224,8 @@ export class ContributionsService {
       {
         cycleId: contribution.cycleId,
         targetUserId: contribution.payerUserId,
-        actorName: reviewer?.name,
-        targetName: contribution.payer.name,
+        actorName: reviewer ? getFullName(reviewer) : undefined,
+        targetName: getFullName(contribution.payer),
         reason,
       },
     );

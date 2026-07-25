@@ -6,6 +6,11 @@ import {
 } from '../../generated/prisma/enums';
 import { Prisma } from '../../generated/prisma/client';
 import { deriveInviteEffectiveStatus } from '../common/helpers/invite-effective-status';
+import { getFullName, withDisplayName } from '../common/helpers/user-name';
+import {
+  userNameSelect,
+  userSummarySelect,
+} from '../common/helpers/user-select';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminListQueryDto } from './dto/admin-list-query.dto';
 
@@ -26,7 +31,9 @@ export class AdminService {
     const where: Prisma.UserWhereInput = query.search
       ? {
           OR: [
-            { name: { contains: query.search, mode: 'insensitive' } },
+            { firstName: { contains: query.search, mode: 'insensitive' } },
+            { lastName: { contains: query.search, mode: 'insensitive' } },
+            { middleName: { contains: query.search, mode: 'insensitive' } },
             { email: { contains: query.search, mode: 'insensitive' } },
           ],
         }
@@ -41,7 +48,7 @@ export class AdminService {
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
-          name: true,
+          ...userNameSelect,
           email: true,
           createdAt: true,
           lastLoginAt: true,
@@ -100,7 +107,10 @@ export class AdminService {
     return {
       data: users.map((user) => ({
         id: user.id,
-        name: user.name,
+        name: getFullName(user),
+        firstName: user.firstName,
+        middleName: user.middleName,
+        lastName: user.lastName,
         email: user.email,
         createdAt: user.createdAt,
         lastLoginAt: user.lastLoginAt,
@@ -122,10 +132,12 @@ export class AdminService {
       where: { id },
       select: {
         id: true,
-        name: true,
+        ...userNameSelect,
         email: true,
         bankName: true,
+        bankCode: true,
         accountNumber: true,
+        bankVerified: true,
         notifyEmail: true,
         notifyWhatsApp: true,
         isSuperAdmin: true,
@@ -168,10 +180,15 @@ export class AdminService {
 
     return {
       id: user.id,
-      name: user.name,
+      name: getFullName(user),
+      firstName: user.firstName,
+      middleName: user.middleName,
+      lastName: user.lastName,
       email: user.email,
       bankName: user.bankName,
+      bankCode: user.bankCode,
       accountNumber: user.accountNumber,
+      bankVerified: user.bankVerified,
       notifyEmail: user.notifyEmail,
       notifyWhatsApp: user.notifyWhatsApp,
       isSuperAdmin: user.isSuperAdmin,
@@ -208,7 +225,7 @@ export class AdminService {
             where: { status: CycleStatus.active },
             take: 1,
             include: {
-              collector: { select: { id: true, name: true } },
+              collector: { select: { id: true, ...userNameSelect } },
             },
           },
         },
@@ -256,7 +273,9 @@ export class AdminService {
           frequency: group.frequency,
           memberCount: group._count.members,
           currentCycleNumber: activeCycle?.cycleNumber ?? null,
-          currentCollectorName: activeCycle?.collector.name ?? null,
+          currentCollectorName: activeCycle?.collector
+            ? getFullName(activeCycle.collector)
+            : null,
           totalConfirmedCollected: totalCollectedByGroup.get(group.id) ?? 0,
           createdAt: group.createdAt,
         };
@@ -279,10 +298,12 @@ export class AdminService {
             user: {
               select: {
                 id: true,
-                name: true,
+                ...userNameSelect,
                 email: true,
                 bankName: true,
+                bankCode: true,
                 accountNumber: true,
+                bankVerified: true,
                 lastLoginAt: true,
                 createdAt: true,
               },
@@ -294,15 +315,15 @@ export class AdminService {
           orderBy: { cycleNumber: 'desc' },
           include: {
             collector: {
-              select: { id: true, name: true, email: true },
+              select: userSummarySelect,
             },
             contributions: {
               include: {
                 payer: {
-                  select: { id: true, name: true, email: true },
+                  select: userSummarySelect,
                 },
                 reviewer: {
-                  select: { id: true, name: true },
+                  select: { id: true, ...userNameSelect },
                 },
               },
               orderBy: { submittedAt: 'desc' },
@@ -312,14 +333,14 @@ export class AdminService {
         activity: {
           orderBy: { createdAt: 'desc' },
           include: {
-            actor: { select: { id: true, name: true } },
-            target: { select: { id: true, name: true } },
+            actor: { select: { id: true, ...userNameSelect } },
+            target: { select: { id: true, ...userNameSelect } },
           },
         },
         invites: {
           orderBy: { expiresAt: 'desc' },
           include: {
-            invitedBy: { select: { id: true, name: true } },
+            invitedBy: { select: { id: true, ...userNameSelect } },
           },
         },
       },
@@ -331,8 +352,29 @@ export class AdminService {
 
     return {
       ...group,
+      members: group.members.map((member) => ({
+        ...member,
+        user: withDisplayName(member.user),
+      })),
+      cycles: group.cycles.map((cycle) => ({
+        ...cycle,
+        collector: withDisplayName(cycle.collector),
+        contributions: cycle.contributions.map((contribution) => ({
+          ...contribution,
+          payer: withDisplayName(contribution.payer),
+          reviewer: contribution.reviewer
+            ? withDisplayName(contribution.reviewer)
+            : null,
+        })),
+      })),
+      activity: group.activity.map((event) => ({
+        ...event,
+        actor: withDisplayName(event.actor),
+        target: event.target ? withDisplayName(event.target) : null,
+      })),
       invites: group.invites.map((invite) => ({
         ...invite,
+        invitedBy: withDisplayName(invite.invitedBy),
         effectiveStatus: deriveInviteEffectiveStatus(invite),
       })),
     };

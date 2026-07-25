@@ -4,6 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Role } from '../../generated/prisma/enums';
+import { withDisplayName } from '../common/helpers/user-name';
+import { userSummarySelect } from '../common/helpers/user-select';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -44,15 +46,20 @@ export class MembersService {
       ),
     );
 
-    return this.prisma.groupMember.findMany({
+    const updated = await this.prisma.groupMember.findMany({
       where: { groupId },
       include: {
         user: {
-          select: { id: true, name: true, email: true },
+          select: userSummarySelect,
         },
       },
       orderBy: { payoutOrder: 'asc' },
     });
+
+    return updated.map((member) => ({
+      ...member,
+      user: withDisplayName(member.user),
+    }));
   }
 
   async makeAdmin(groupId: string, userId: string) {
@@ -63,15 +70,20 @@ export class MembersService {
       throw new NotFoundException('Member not found');
     }
 
-    return this.prisma.groupMember.update({
+    const updated = await this.prisma.groupMember.update({
       where: { groupId_userId: { groupId, userId } },
       data: { role: Role.admin },
       include: {
         user: {
-          select: { id: true, name: true, email: true },
+          select: userSummarySelect,
         },
       },
     });
+
+    return {
+      ...updated,
+      user: withDisplayName(updated.user),
+    };
   }
 
   async remove(groupId: string, targetUserId: string, requesterId: string) {

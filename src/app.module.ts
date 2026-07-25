@@ -7,6 +7,7 @@ import { AdminModule } from './admin/admin.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { BanksModule } from './banks/banks.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ContributionsModule } from './contributions/contributions.module';
 import { CyclesModule } from './cycles/cycles.module';
@@ -26,6 +27,7 @@ import { UsersModule } from './users/users.module';
     PrismaModule,
     StorageModule,
     AuthModule,
+    BanksModule,
     UsersModule,
     GroupsModule,
     MembersModule,
