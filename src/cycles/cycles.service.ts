@@ -11,6 +11,12 @@ import {
 import { ActivityService } from '../activity/activity.service';
 import { computePeriodEnd } from '../common/helpers/compute-period-end';
 import { deriveContributionDisplayStatus } from '../common/helpers/contribution-display-status';
+import { getFullName, withDisplayName } from '../common/helpers/user-name';
+import {
+  userBankSelect,
+  userNameSelect,
+  userSummarySelect,
+} from '../common/helpers/user-select';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -22,21 +28,20 @@ export class CyclesService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  findHistory(groupId: string) {
-    return this.prisma.cycle.findMany({
+  async findHistory(groupId: string) {
+    const cycles = await this.prisma.cycle.findMany({
       where: { groupId, status: CycleStatus.completed },
       include: {
         collector: {
-          select: {
-            id: true,
-            name: true,
-            bankName: true,
-            accountNumber: true,
-          },
+          select: userBankSelect,
         },
       },
       orderBy: { cycleNumber: 'desc' },
     });
+    return cycles.map((cycle) => ({
+      ...cycle,
+      collector: withDisplayName(cycle.collector),
+    }));
   }
 
   async findActive(groupId: string) {
@@ -45,11 +50,8 @@ export class CyclesService {
       include: {
         collector: {
           select: {
-            id: true,
-            name: true,
+            ...userBankSelect,
             email: true,
-            bankName: true,
-            accountNumber: true,
           },
         },
         contributions: true,
@@ -58,7 +60,10 @@ export class CyclesService {
     if (!cycle) {
       throw new NotFoundException('No active cycle found');
     }
-    return cycle;
+    return {
+      ...cycle,
+      collector: withDisplayName(cycle.collector),
+    };
   }
 
   async close(groupId: string, actorUserId: string) {
@@ -78,7 +83,7 @@ export class CyclesService {
     const activeCycle = await this.prisma.cycle.findFirst({
       where: { groupId, status: CycleStatus.active },
       include: {
-        collector: { select: { id: true, name: true } },
+        collector: { select: { id: true, ...userNameSelect } },
       },
     });
     if (!activeCycle) {
@@ -114,12 +119,7 @@ export class CyclesService {
           },
           include: {
             collector: {
-              select: {
-                id: true,
-                name: true,
-                bankName: true,
-                accountNumber: true,
-              },
+              select: userBankSelect,
             },
           },
         });
@@ -130,11 +130,11 @@ export class CyclesService {
 
     const actor = await this.prisma.user.findUnique({
       where: { id: actorUserId },
-      select: { name: true },
+      select: userNameSelect,
     });
     const nextCollectorUser = await this.prisma.user.findUnique({
       where: { id: nextCollector.userId },
-      select: { id: true, name: true },
+      select: { id: true, ...userNameSelect },
     });
 
     await this.activityService.log(
@@ -144,7 +144,7 @@ export class CyclesService {
       {
         cycleId: completedCycle.id,
         cycleNumber: activeCycle.cycleNumber,
-        actorName: actor?.name,
+        actorName: actor ? getFullName(actor) : undefined,
       },
     );
     await this.activityService.log(
@@ -154,7 +154,7 @@ export class CyclesService {
       {
         cycleId: newCycle.id,
         cycleNumber: newCycle.cycleNumber,
-        actorName: actor?.name,
+        actorName: actor ? getFullName(actor) : undefined,
       },
     );
     await this.activityService.log(
@@ -164,8 +164,10 @@ export class CyclesService {
       {
         cycleId: newCycle.id,
         targetUserId: nextCollector.userId,
-        targetName: nextCollectorUser?.name,
-        actorName: actor?.name,
+        targetName: nextCollectorUser
+          ? getFullName(nextCollectorUser)
+          : undefined,
+        actorName: actor ? getFullName(actor) : undefined,
       },
     );
 
@@ -198,7 +200,10 @@ export class CyclesService {
 
     return {
       completedCycle,
-      activeCycle: newCycle,
+      activeCycle: {
+        ...newCycle,
+        collector: withDisplayName(newCycle.collector),
+      },
     };
   }
 
@@ -212,9 +217,7 @@ export class CyclesService {
               include: {
                 user: {
                   select: {
-                    id: true,
-                    name: true,
-                    email: true,
+                    ...userSummarySelect,
                     bankName: true,
                     accountNumber: true,
                   },
@@ -241,7 +244,7 @@ export class CyclesService {
         const contribution = contributionsByPayer.get(member.userId);
         return {
           userId: member.userId,
-          name: member.user.name,
+          name: getFullName(member.user),
           email: member.user.email,
           amount: contribution?.amount ?? cycle.group.contributionAmount,
           contribution: contribution ?? null,

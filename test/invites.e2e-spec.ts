@@ -62,10 +62,12 @@ describe('Invites (e2e)', () => {
     const adminRes = await request(app.getHttpServer())
       .post('/auth/signup')
       .send({
-        name: 'Invite Admin',
+        firstName: 'Invite',
+        lastName: 'Admin',
         email: adminEmail,
         password,
         bankName: 'GTBank',
+        bankCode: '058',
         accountNumber: '0123456789',
       })
       .expect(201);
@@ -76,10 +78,12 @@ describe('Invites (e2e)', () => {
     const inviteeRes = await request(app.getHttpServer())
       .post('/auth/signup')
       .send({
-        name: 'Invitee User',
+        firstName: 'Invitee',
+        lastName: 'User',
         email: inviteeEmail,
         password,
         bankName: 'Access',
+        bankCode: '044',
         accountNumber: '0987654321',
       })
       .expect(201);

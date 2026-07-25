@@ -6,6 +6,11 @@ import {
 } from '../../generated/prisma/enums';
 import { computePeriodEnd } from '../common/helpers/compute-period-end';
 import { deriveContributionDisplayStatus } from '../common/helpers/contribution-display-status';
+import { getFullName, withDisplayName } from '../common/helpers/user-name';
+import {
+  userBankSelect,
+  userNameSelect,
+} from '../common/helpers/user-select';
 import { InvitesService } from '../invites/invites.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,11 +22,8 @@ const groupDetailInclude = {
     include: {
       user: {
         select: {
-          id: true,
-          name: true,
+          ...userBankSelect,
           email: true,
-          bankName: true,
-          accountNumber: true,
         },
       },
     },
@@ -31,12 +33,7 @@ const groupDetailInclude = {
     where: { status: CycleStatus.active },
     include: {
       collector: {
-        select: {
-          id: true,
-          name: true,
-          bankName: true,
-          accountNumber: true,
-        },
+        select: userBankSelect,
       },
       contributions: {
         select: {
@@ -57,9 +54,7 @@ const groupDetailInclude = {
 } as const;
 
 type GroupDetail = Awaited<
-  ReturnType<
-    PrismaService['group']['findUniqueOrThrow']
-  >
+  ReturnType<PrismaService['group']['findUniqueOrThrow']>
 > & {
   members: Array<{
     groupId: string;
@@ -68,10 +63,14 @@ type GroupDetail = Awaited<
     payoutOrder: number;
     user: {
       id: string;
-      name: string;
+      firstName: string;
+      middleName: string | null;
+      lastName: string;
       email: string;
       bankName: string;
+      bankCode: string;
       accountNumber: string;
+      bankVerified: boolean;
     };
   }>;
   cycles: Array<{
@@ -84,9 +83,13 @@ type GroupDetail = Awaited<
     status: CycleStatus;
     collector: {
       id: string;
-      name: string;
+      firstName: string;
+      middleName: string | null;
+      lastName: string;
       bankName: string;
+      bankCode: string;
       accountNumber: string;
+      bankVerified: boolean;
     };
     contributions: Array<{
       id: string;
@@ -116,7 +119,7 @@ export class GroupsService {
 
     const creator = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { email: true, name: true },
+      select: { email: true, ...userNameSelect },
     });
 
     const group = await this.prisma.$transaction(async (tx) => {
@@ -176,7 +179,7 @@ export class GroupsService {
           {
             groupId: group.id,
             groupName: group.name,
-            actorName: creator.name,
+            actorName: getFullName(creator),
             href: `/invites/${invite.token}`,
           },
         );
@@ -270,7 +273,7 @@ export class GroupsService {
         userId: member.userId,
         role: member.role,
         payoutOrder: member.payoutOrder,
-        user: member.user,
+        user: withDisplayName(member.user),
         contribution: contribution ?? null,
         displayStatus,
         isCollector,
@@ -289,14 +292,21 @@ export class GroupsService {
       createdAt: group.createdAt,
       memberCount: group._count.members,
       members,
-      activeCycle,
+      activeCycle: activeCycle
+        ? {
+            ...activeCycle,
+            collector: withDisplayName(activeCycle.collector),
+          }
+        : null,
       myContributionStatus: myMembership?.displayStatus ?? null,
       whoseTurn: activeCycle
         ? {
             userId: activeCycle.collectorUserId,
-            name: activeCycle.collector.name,
+            ...withDisplayName(activeCycle.collector),
             bankName: activeCycle.collector.bankName,
+            bankCode: activeCycle.collector.bankCode,
             accountNumber: activeCycle.collector.accountNumber,
+            bankVerified: activeCycle.collector.bankVerified,
           }
         : null,
     };

@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ActivityType } from '../../generated/prisma/enums';
+import { withDisplayName } from '../common/helpers/user-name';
+import { userNameSelect } from '../common/helpers/user-select';
 import { PrismaService } from '../prisma/prisma.service';
 
 type LogOptions = {
@@ -34,15 +36,21 @@ export class ActivityService {
     });
   }
 
-  findByGroup(groupId: string) {
-    return this.prisma.activityEvent.findMany({
+  async findByGroup(groupId: string) {
+    const events = await this.prisma.activityEvent.findMany({
       where: { groupId },
       orderBy: { createdAt: 'desc' },
       include: {
-        actor: { select: { id: true, name: true } },
-        target: { select: { id: true, name: true } },
+        actor: { select: { id: true, ...userNameSelect } },
+        target: { select: { id: true, ...userNameSelect } },
       },
     });
+
+    return events.map((event) => ({
+      ...event,
+      actor: withDisplayName(event.actor),
+      target: event.target ? withDisplayName(event.target) : null,
+    }));
   }
 
   private formatMessage(type: ActivityType, options: LogOptions): string {

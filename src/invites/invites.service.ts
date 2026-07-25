@@ -13,6 +13,8 @@ import {
 } from '../../generated/prisma/enums';
 import { ActivityService } from '../activity/activity.service';
 import { deriveInviteEffectiveStatus } from '../common/helpers/invite-effective-status';
+import { getFullName, withDisplayName } from '../common/helpers/user-name';
+import { userNameSelect, userSummarySelect } from '../common/helpers/user-select';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInviteDto } from './dto/create-invite.dto';
@@ -40,7 +42,7 @@ export class InvitesService {
 
     const inviter = await this.prisma.user.findUnique({
       where: { id: invitedByUserId },
-      select: { id: true, name: true },
+      select: { id: true, ...userNameSelect },
     });
     if (!inviter) {
       throw new NotFoundException('Inviter not found');
@@ -63,6 +65,7 @@ export class InvitesService {
     });
 
     let matchedExistingUser = false;
+    const inviterName = getFullName(inviter);
 
     if (inviteeEmail) {
       // Case-insensitive: normalize both sides (emails are stored lowercased).
@@ -84,9 +87,9 @@ export class InvitesService {
           {
             groupId: group.id,
             groupName: group.name,
-            actorName: inviter.name,
+            actorName: inviterName,
             title: `You've been invited to join ${group.name}`,
-            body: `${inviter.name} invited you to join ${group.name}. Contribution amount: ${group.contributionAmount}.`,
+            body: `${inviterName} invited you to join ${group.name}. Contribution amount: ${group.contributionAmount}.`,
             href: `/invite/${invite.token}`,
           },
         );
@@ -116,7 +119,7 @@ export class InvitesService {
     const invites = await this.prisma.invite.findMany({
       where: { groupId },
       include: {
-        invitedBy: { select: { id: true, name: true } },
+        invitedBy: { select: { id: true, ...userNameSelect } },
       },
       orderBy: { expiresAt: 'desc' },
     });
@@ -125,7 +128,7 @@ export class InvitesService {
       token: invite.token,
       inviteeEmail: invite.inviteeEmail,
       invitedByUserId: invite.invitedByUserId,
-      invitedBy: invite.invitedBy,
+      invitedBy: withDisplayName(invite.invitedBy),
       expiresAt: invite.expiresAt,
       status: invite.status,
       effectiveStatus: deriveInviteEffectiveStatus(invite),
@@ -139,7 +142,7 @@ export class InvitesService {
         group: {
           select: { id: true, name: true, contributionAmount: true },
         },
-        invitedBy: { select: { id: true, name: true } },
+        invitedBy: { select: { id: true, ...userNameSelect } },
       },
     });
 
@@ -164,10 +167,7 @@ export class InvitesService {
         name: invite.group.name,
         contributionAmount: invite.group.contributionAmount,
       },
-      inviter: {
-        id: invite.invitedBy.id,
-        name: invite.invitedBy.name,
-      },
+      inviter: withDisplayName(invite.invitedBy),
     };
   }
 
@@ -176,7 +176,7 @@ export class InvitesService {
       where: { token },
       include: {
         group: { select: { id: true, name: true } },
-        invitedBy: { select: { id: true, name: true } },
+        invitedBy: { select: { id: true, ...userNameSelect } },
       },
     });
 
@@ -220,7 +220,7 @@ export class InvitesService {
           payoutOrder,
         },
         include: {
-          user: { select: { id: true, name: true, email: true } },
+          user: { select: userSummarySelect },
         },
       });
 
@@ -232,11 +232,13 @@ export class InvitesService {
       return member;
     });
 
+    const memberName = getFullName(membership.user);
+
     await this.activityService.log(
       invite.groupId,
       ActivityType.member_joined,
       userId,
-      { actorName: membership.user.name },
+      { actorName: memberName },
     );
 
     await this.notificationsService.notify(
@@ -245,11 +247,14 @@ export class InvitesService {
       {
         groupId: invite.groupId,
         groupName: invite.group.name,
-        actorName: membership.user.name,
+        actorName: memberName,
         href: `/groups/${invite.groupId}`,
       },
     );
 
-    return membership;
+    return {
+      ...membership,
+      user: withDisplayName(membership.user),
+    };
   }
 }

@@ -73,11 +73,15 @@ enum NotificationType {
 
 model User {
   id              String    @id @default(uuid())
-  name            String
+  firstName       String
+  lastName        String
+  middleName      String?
   email           String    @unique
   password        String
   bankName        String
+  bankCode        String
   accountNumber   String
+  bankVerified    Boolean   @default(false)
   notifyEmail     Boolean   @default(true)
   notifyWhatsApp  Boolean   @default(true)
   isSuperAdmin    Boolean   @default(false)
