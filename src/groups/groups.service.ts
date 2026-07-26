@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CycleStatus, Role } from '../../generated/prisma/enums';
 import { computePeriodEnd } from '../common/helpers/compute-period-end';
 import { deriveContributionDisplayStatus } from '../common/helpers/contribution-display-status';
@@ -218,6 +222,33 @@ export class GroupsService {
   }
 
   async remove(groupId: string) {
+    const group = await this.prisma.group.findUnique({
+      where: { id: groupId },
+      include: { members: true },
+    });
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+
+    const totalContributions = await this.prisma.contribution.count({
+      where: { cycle: { groupId } },
+    });
+
+    if (totalContributions === 0) {
+      await this.prisma.group.delete({ where: { id: groupId } });
+      return { ok: true };
+    }
+
+    const completedCycleCount = await this.prisma.cycle.count({
+      where: { groupId, status: CycleStatus.completed },
+    });
+
+    if (completedCycleCount < group.members.length) {
+      throw new ConflictException(
+        'This group has payments in progress from an incomplete rotation. Finish the current cycle before deleting — or if nothing has been paid yet, deletion is always allowed.',
+      );
+    }
+
     await this.prisma.group.delete({ where: { id: groupId } });
     return { ok: true };
   }

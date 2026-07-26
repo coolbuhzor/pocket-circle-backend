@@ -336,4 +336,75 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${inviteeToken}`)
       .expect(403);
   });
+
+  it('revokes an active invite and rejects accept', async () => {
+    const createRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: `revoke.${suffix}@example.com` })
+      .expect(201);
+
+    const token = createRes.body.token as string;
+
+    const revokeRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites/${token}/revoke`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+
+    expect(revokeRes.body).toMatchObject({
+      token,
+      status: InviteStatus.revoked,
+      effectiveStatus: 'revoked',
+    });
+
+    const acceptRes = await request(app.getHttpServer())
+      .post(`/invites/${token}/accept`)
+      .set('Authorization', `Bearer ${inviteeToken}`)
+      .expect(400);
+
+    expect(acceptRes.body.message).toContain(
+      'This invite has been revoked by the group admin',
+    );
+  });
+
+  it('rejects revoke when invite is already accepted', async () => {
+    const acceptorEmail = `acceptor.${suffix}@example.com`;
+    const signupRes = await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({
+        firstName: 'Accept',
+        lastName: 'Or',
+        email: acceptorEmail,
+        password,
+        bankName: 'GTBank',
+        bankCode: '011',
+        accountNumber: '2222333344',
+      })
+      .expect(201);
+    const acceptorToken = signupRes.body.accessToken as string;
+
+    const createRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+      .expect(201);
+
+    const token = createRes.body.token as string;
+
+    await request(app.getHttpServer())
+      .post(`/invites/${token}/accept`)
+      .set('Authorization', `Bearer ${acceptorToken}`)
+      .expect(201);
+
+    const revokeRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites/${token}/revoke`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(400);
+
+    expect(revokeRes.body.message).toContain(
+      "This invite has already been accepted and can't be revoked",
+    );
+
+    await prisma.user.delete({ where: { email: acceptorEmail } }).catch(() => undefined);
+  });
 });

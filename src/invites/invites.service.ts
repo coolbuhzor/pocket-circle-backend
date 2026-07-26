@@ -136,6 +136,36 @@ export class InvitesService {
     }));
   }
 
+  async revoke(groupId: string, token: string) {
+    const invite = await this.prisma.invite.findUnique({
+      where: { token },
+    });
+
+    if (!invite || invite.groupId !== groupId) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    if (invite.status === InviteStatus.accepted) {
+      throw new BadRequestException(
+        "This invite has already been accepted and can't be revoked",
+      );
+    }
+
+    const updated = await this.prisma.invite.update({
+      where: { token },
+      data: { status: InviteStatus.revoked },
+    });
+
+    return {
+      token: updated.token,
+      inviteeEmail: updated.inviteeEmail,
+      invitedByUserId: updated.invitedByUserId,
+      expiresAt: updated.expiresAt,
+      status: updated.status,
+      effectiveStatus: deriveInviteEffectiveStatus(updated),
+    };
+  }
+
   async view(token: string) {
     const invite = await this.prisma.invite.findUnique({
       where: { token },
@@ -183,6 +213,20 @@ export class InvitesService {
 
     if (!invite) {
       throw new NotFoundException('Invite not found or is no longer valid');
+    }
+
+    if (invite.status === InviteStatus.revoked) {
+      throw new BadRequestException(
+        'This invite has been revoked by the group admin',
+      );
+    }
+
+    if (invite.status === InviteStatus.accepted) {
+      throw new BadRequestException('This invite has already been accepted');
+    }
+
+    if (invite.status === InviteStatus.expired) {
+      throw new BadRequestException('This invite has expired');
     }
 
     if (invite.status !== InviteStatus.active) {
