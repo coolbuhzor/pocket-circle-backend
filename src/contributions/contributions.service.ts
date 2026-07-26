@@ -12,6 +12,7 @@ import {
 import { ActivityService } from '../activity/activity.service';
 import { getFullName, withDisplayName } from '../common/helpers/user-name';
 import { userNameSelect, userSummarySelect } from '../common/helpers/user-select';
+import { CyclesService } from '../cycles/cycles.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService, UploadedFile } from '../storage/storage.service';
@@ -24,6 +25,7 @@ export class ContributionsService {
     private readonly storage: StorageService,
     private readonly activityService: ActivityService,
     private readonly notificationsService: NotificationsService,
+    private readonly cyclesService: CyclesService,
   ) {}
 
   async findByCycle(cycleId: string) {
@@ -180,6 +182,13 @@ export class ContributionsService {
         href: `/groups/${contribution.cycle.groupId}`,
       },
     );
+
+    if (await this.cyclesService.isCycleFullyPaid(contribution.cycleId)) {
+      await this.cyclesService.closeCycle(
+        contribution.cycleId,
+        reviewerUserId,
+      );
+    }
 
     return updated;
   }
