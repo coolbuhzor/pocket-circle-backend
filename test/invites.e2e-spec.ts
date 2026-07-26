@@ -237,7 +237,11 @@ describe('Invites (e2e)', () => {
       .get(`/invites/${createdInviteToken}`)
       .expect(200);
 
-    expect(view.body.group.id).toBe(groupId);
+    expect(view.body).toMatchObject({
+      token: createdInviteToken,
+      status: InviteStatus.active,
+      group: { id: groupId },
+    });
     expect(view.body.inviter.name).toBe('Invite Admin');
 
     await request(app.getHttpServer())
@@ -256,6 +260,17 @@ describe('Invites (e2e)', () => {
     expect(accepted).toMatchObject({
       status: InviteStatus.accepted,
       effectiveStatus: 'accepted',
+    });
+
+    // Accepted invites remain viewable so the client can route on status.
+    const viewAccepted = await request(app.getHttpServer())
+      .get(`/invites/${createdInviteToken}`)
+      .expect(200);
+
+    expect(viewAccepted.body).toMatchObject({
+      token: createdInviteToken,
+      status: InviteStatus.accepted,
+      group: { id: groupId },
     });
   });
 
@@ -335,5 +350,208 @@ describe('Invites (e2e)', () => {
       .get(`/groups/${groupId}/invites`)
       .set('Authorization', `Bearer ${inviteeToken}`)
       .expect(403);
+  });
+
+  it('revokes an active invite and rejects accept', async () => {
+    const createRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: `revoke.${suffix}@example.com` })
+      .expect(201);
+
+    const token = createRes.body.token as string;
+
+    const revokeRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites/${token}/revoke`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+
+    expect(revokeRes.body).toMatchObject({
+      token,
+      status: InviteStatus.revoked,
+      effectiveStatus: 'revoked',
+    });
+
+    const acceptRes = await request(app.getHttpServer())
+      .post(`/invites/${token}/accept`)
+      .set('Authorization', `Bearer ${inviteeToken}`)
+      .expect(400);
+
+    expect(acceptRes.body.message).toContain(
+      'This invite has been revoked by the group admin',
+    );
+  });
+
+  it('rejects revoke when invite is already accepted', async () => {
+    const acceptorEmail = `acceptor.${suffix}@example.com`;
+    const signupRes = await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({
+        firstName: 'Accept',
+        lastName: 'Or',
+        email: acceptorEmail,
+        password,
+        bankName: 'GTBank',
+        bankCode: '011',
+        accountNumber: '2222333344',
+      })
+      .expect(201);
+    const acceptorToken = signupRes.body.accessToken as string;
+
+    const createRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+      .expect(201);
+
+    const token = createRes.body.token as string;
+
+    await request(app.getHttpServer())
+      .post(`/invites/${token}/accept`)
+      .set('Authorization', `Bearer ${acceptorToken}`)
+      .expect(201);
+
+    const revokeRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites/${token}/revoke`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(400);
+
+    expect(revokeRes.body.message).toContain(
+      "This invite has already been accepted and can't be revoked",
+    );
+
+    await prisma.user.delete({ where: { email: acceptorEmail } }).catch(() => undefined);
+  });
+
+  it('returns invite data for expired and revoked tokens', async () => {
+    const expiredRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+      .expect(201);
+    const expiredToken = expiredRes.body.token as string;
+
+    await prisma.invite.update({
+      where: { token: expiredToken },
+      data: {
+        status: InviteStatus.expired,
+        expiresAt: new Date(Date.now() - 60_000),
+      },
+    });
+
+    const viewExpired = await request(app.getHttpServer())
+      .get(`/invites/${expiredToken}`)
+      .expect(200);
+
+    expect(viewExpired.body).toMatchObject({
+      token: expiredToken,
+      status: InviteStatus.expired,
+      group: { id: groupId },
+    });
+
+    const revokedRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+      .expect(201);
+    const revokedToken = revokedRes.body.token as string;
+
+    await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites/${revokedToken}/revoke`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+
+    const viewRevoked = await request(app.getHttpServer())
+      .get(`/invites/${revokedToken}`)
+      .expect(200);
+
+    expect(viewRevoked.body).toMatchObject({
+      token: revokedToken,
+      status: InviteStatus.revoked,
+      group: { id: groupId },
+    });
+
+    await request(app.getHttpServer())
+      .get('/invites/00000000-0000-0000-0000-000000000000')
+      .expect(404);
+  });
+
+  it('resends an expired invite, refreshes expiry, and notifies again', async () => {
+    const resendInviteeEmail = `resend.${suffix}@example.com`;
+    const signupRes = await request(app.getHttpServer())
+      .post('/auth/signup')
+      .send({
+        firstName: 'Resend',
+        lastName: 'User',
+        email: resendInviteeEmail,
+        password,
+        bankName: 'GTBank',
+        bankCode: '057',
+        accountNumber: '3333444455',
+      })
+      .expect(201);
+    expect(signupRes.body.accessToken).toBeDefined();
+
+    const createRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: resendInviteeEmail })
+      .expect(201);
+
+    const token = createRes.body.token as string;
+
+    await prisma.invite.update({
+      where: { token },
+      data: {
+        status: InviteStatus.expired,
+        expiresAt: new Date(Date.now() - 60_000),
+      },
+    });
+
+    const beforeCount = await prisma.notification.count({
+      where: {
+        type: 'group_invite',
+        href: `/invite/${token}`,
+      },
+    });
+
+    const beforeResend = Date.now();
+    const resendRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites/${token}/resend`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(201);
+
+    expect(resendRes.body).toMatchObject({
+      token,
+      groupId,
+      inviteeEmail: resendInviteeEmail,
+      status: InviteStatus.active,
+      matchedExistingUser: true,
+      effectiveStatus: 'pending',
+    });
+    expect(new Date(resendRes.body.expiresAt).getTime()).toBeGreaterThan(
+      beforeResend + 29 * 24 * 60 * 60 * 1000,
+    );
+
+    const afterCount = await prisma.notification.count({
+      where: {
+        type: 'group_invite',
+        href: `/invite/${token}`,
+      },
+    });
+    expect(afterCount).toBe(beforeCount + 1);
+
+    const acceptRes = await request(app.getHttpServer())
+      .post(`/groups/${groupId}/invites/${createdInviteToken}/resend`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(400);
+
+    expect(acceptRes.body.message).toContain(
+      'This invite has already been accepted — no need to resend',
+    );
+
+    await prisma.user
+      .delete({ where: { email: resendInviteeEmail } })
+      .catch(() => undefined);
   });
 });

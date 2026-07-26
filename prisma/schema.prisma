@@ -47,6 +47,7 @@ enum InviteStatus {
   active
   expired
   accepted
+  revoked
 }
 
 enum ActivityType {

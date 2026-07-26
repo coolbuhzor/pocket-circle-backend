@@ -65,37 +65,12 @@ export class InvitesService {
       },
     });
 
-    let matchedExistingUser = false;
-    const inviterName = getFullName(inviter);
-
-    if (inviteeEmail) {
-      // Case-insensitive: normalize both sides (emails are stored lowercased).
-      const matchedUser = await this.prisma.user.findFirst({
-        where: {
-          email: { equals: inviteeEmail, mode: 'insensitive' },
-        },
-        select: { id: true, email: true },
-      });
-
-      if (
-        matchedUser &&
-        matchedUser.email.toLowerCase() === inviteeEmail.toLowerCase()
-      ) {
-        matchedExistingUser = true;
-        await this.notificationsService.notify(
-          matchedUser.id,
-          NotificationType.group_invite,
-          {
-            groupId: group.id,
-            groupName: group.name,
-            actorName: inviterName,
-            title: `You've been invited to join ${group.name}`,
-            body: `${inviterName} invited you to join ${group.name}. Contribution amount: ${group.contributionAmount}.`,
-            href: `/invite/${invite.token}`,
-          },
-        );
-      }
-    }
+    const matchedExistingUser = await this.notifyInviteeIfMatched({
+      inviteeEmail,
+      inviteToken: invite.token,
+      group,
+      inviterName: getFullName(inviter),
+    });
 
     return {
       token: invite.token,
@@ -136,6 +111,36 @@ export class InvitesService {
     }));
   }
 
+  async revoke(groupId: string, token: string) {
+    const invite = await this.prisma.invite.findUnique({
+      where: { token },
+    });
+
+    if (!invite || invite.groupId !== groupId) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    if (invite.status === InviteStatus.accepted) {
+      throw new BadRequestException(
+        "This invite has already been accepted and can't be revoked",
+      );
+    }
+
+    const updated = await this.prisma.invite.update({
+      where: { token },
+      data: { status: InviteStatus.revoked },
+    });
+
+    return {
+      token: updated.token,
+      inviteeEmail: updated.inviteeEmail,
+      invitedByUserId: updated.invitedByUserId,
+      expiresAt: updated.expiresAt,
+      status: updated.status,
+      effectiveStatus: deriveInviteEffectiveStatus(updated),
+    };
+  }
+
   async view(token: string) {
     const invite = await this.prisma.invite.findUnique({
       where: { token },
@@ -148,27 +153,72 @@ export class InvitesService {
     });
 
     if (!invite) {
-      throw new NotFoundException('Invite not found or is no longer valid');
-    }
-
-    if (
-      invite.status !== InviteStatus.active ||
-      invite.expiresAt.getTime() < Date.now()
-    ) {
-      throw new BadRequestException(
-        'This invite has expired or is no longer active',
-      );
+      throw new NotFoundException('Invite not found');
     }
 
     return {
       token: invite.token,
       expiresAt: invite.expiresAt,
+      status: invite.status,
       group: {
         id: invite.group.id,
         name: invite.group.name,
         contributionAmount: invite.group.contributionAmount,
       },
       inviter: withDisplayName(invite.invitedBy),
+    };
+  }
+
+  async resend(groupId: string, token: string) {
+    const invite = await this.prisma.invite.findUnique({
+      where: { token },
+      include: {
+        group: {
+          select: { id: true, name: true, contributionAmount: true },
+        },
+        invitedBy: { select: { id: true, ...userNameSelect } },
+      },
+    });
+
+    if (!invite || invite.groupId !== groupId) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    if (invite.status === InviteStatus.accepted) {
+      throw new BadRequestException(
+        'This invite has already been accepted — no need to resend',
+      );
+    }
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
+
+    const updated = await this.prisma.invite.update({
+      where: { token },
+      data: {
+        expiresAt,
+        ...(invite.status === InviteStatus.expired
+          ? { status: InviteStatus.active }
+          : {}),
+      },
+    });
+
+    const matchedExistingUser = await this.notifyInviteeIfMatched({
+      inviteeEmail: updated.inviteeEmail,
+      inviteToken: updated.token,
+      group: invite.group,
+      inviterName: getFullName(invite.invitedBy),
+    });
+
+    return {
+      token: updated.token,
+      groupId: updated.groupId,
+      invitedByUserId: updated.invitedByUserId,
+      expiresAt: updated.expiresAt,
+      status: updated.status,
+      inviteeEmail: updated.inviteeEmail,
+      matchedExistingUser,
+      effectiveStatus: deriveInviteEffectiveStatus(updated),
     };
   }
 
@@ -183,6 +233,20 @@ export class InvitesService {
 
     if (!invite) {
       throw new NotFoundException('Invite not found or is no longer valid');
+    }
+
+    if (invite.status === InviteStatus.revoked) {
+      throw new BadRequestException(
+        'This invite has been revoked by the group admin',
+      );
+    }
+
+    if (invite.status === InviteStatus.accepted) {
+      throw new BadRequestException('This invite has already been accepted');
+    }
+
+    if (invite.status === InviteStatus.expired) {
+      throw new BadRequestException('This invite has expired');
     }
 
     if (invite.status !== InviteStatus.active) {
@@ -269,5 +333,47 @@ export class InvitesService {
       ...membership,
       user: withDisplayName(membership.user),
     };
+  }
+
+  private async notifyInviteeIfMatched(params: {
+    inviteeEmail: string | null;
+    inviteToken: string;
+    group: { id: string; name: string; contributionAmount: number };
+    inviterName: string;
+  }): Promise<boolean> {
+    const { inviteeEmail, inviteToken, group, inviterName } = params;
+    if (!inviteeEmail) {
+      return false;
+    }
+
+    // Case-insensitive: normalize both sides (emails are stored lowercased).
+    const matchedUser = await this.prisma.user.findFirst({
+      where: {
+        email: { equals: inviteeEmail, mode: 'insensitive' },
+      },
+      select: { id: true, email: true },
+    });
+
+    if (
+      !matchedUser ||
+      matchedUser.email.toLowerCase() !== inviteeEmail.toLowerCase()
+    ) {
+      return false;
+    }
+
+    await this.notificationsService.notify(
+      matchedUser.id,
+      NotificationType.group_invite,
+      {
+        groupId: group.id,
+        groupName: group.name,
+        actorName: inviterName,
+        title: `You've been invited to join ${group.name}`,
+        body: `${inviterName} invited you to join ${group.name}. Contribution amount: ${group.contributionAmount}.`,
+        href: `/invite/${inviteToken}`,
+      },
+    );
+
+    return true;
   }
 }

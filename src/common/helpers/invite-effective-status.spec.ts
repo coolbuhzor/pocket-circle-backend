@@ -16,6 +16,30 @@ describe('deriveInviteEffectiveStatus', () => {
     ).toBe('accepted');
   });
 
+  it('returns revoked when stored status is revoked', () => {
+    expect(
+      deriveInviteEffectiveStatus(
+        {
+          status: InviteStatus.revoked,
+          expiresAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+        now,
+      ),
+    ).toBe('revoked');
+  });
+
+  it('returns revoked even when expiresAt is in the past', () => {
+    expect(
+      deriveInviteEffectiveStatus(
+        {
+          status: InviteStatus.revoked,
+          expiresAt: new Date('2026-06-01T00:00:00.000Z'),
+        },
+        now,
+      ),
+    ).toBe('revoked');
+  });
+
   it('returns expired when stored status is expired', () => {
     expect(
       deriveInviteEffectiveStatus(

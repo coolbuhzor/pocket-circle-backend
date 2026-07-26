@@ -41,6 +41,22 @@ export class InvitesController {
     return this.invitesService.listForGroup(groupId);
   }
 
+  @Post('groups/:id/invites/:token/revoke')
+  @UseGuards(GroupAdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Revoke an invite (admin)' })
+  revoke(@Param('id') groupId: string, @Param('token') token: string) {
+    return this.invitesService.revoke(groupId, token);
+  }
+
+  @Post('groups/:id/invites/:token/resend')
+  @UseGuards(GroupAdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Resend an invite (admin)' })
+  resend(@Param('id') groupId: string, @Param('token') token: string) {
+    return this.invitesService.resend(groupId, token);
+  }
+
   @Public()
   @Get('invites/:token')
   @ApiOperation({ summary: 'View invite details (public)' })
