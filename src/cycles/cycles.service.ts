@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import {
   ActivityType,
+  ContributionStatus,
   CycleStatus,
   NotificationType,
 } from '../../generated/prisma/enums';
@@ -67,27 +68,39 @@ export class CyclesService {
   }
 
   async close(groupId: string, actorUserId: string) {
-    const group = await this.prisma.group.findUnique({
-      where: { id: groupId },
-      include: {
-        members: { orderBy: { payoutOrder: 'asc' } },
-      },
-    });
-    if (!group) {
-      throw new NotFoundException('Group not found');
-    }
-    if (group.members.length === 0) {
-      throw new BadRequestException('Group has no members');
-    }
-
     const activeCycle = await this.prisma.cycle.findFirst({
       where: { groupId, status: CycleStatus.active },
-      include: {
-        collector: { select: { id: true, ...userNameSelect } },
-      },
+      select: { id: true },
     });
     if (!activeCycle) {
       throw new BadRequestException('No active cycle to close');
+    }
+    return this.closeCycle(activeCycle.id, actorUserId);
+  }
+
+  async closeCycle(cycleId: string, actorUserId: string) {
+    const activeCycle = await this.prisma.cycle.findUnique({
+      where: { id: cycleId },
+      include: {
+        collector: { select: { id: true, ...userNameSelect } },
+        group: {
+          include: {
+            members: { orderBy: { payoutOrder: 'asc' } },
+          },
+        },
+      },
+    });
+    if (!activeCycle) {
+      throw new NotFoundException('Cycle not found');
+    }
+    if (activeCycle.status !== CycleStatus.active) {
+      throw new BadRequestException('Cycle is not active');
+    }
+
+    const group = activeCycle.group;
+    const groupId = group.id;
+    if (group.members.length === 0) {
+      throw new BadRequestException('Group has no members');
     }
 
     const currentIndex = group.members.findIndex(
@@ -207,6 +220,30 @@ export class CyclesService {
     };
   }
 
+  async isCycleFullyPaid(cycleId: string): Promise<boolean> {
+    const cycle = await this.prisma.cycle.findUnique({
+      where: { id: cycleId },
+      include: {
+        group: { include: { members: true } },
+        contributions: true,
+      },
+    });
+    if (!cycle) {
+      return false;
+    }
+
+    const nonCollectorMemberIds = cycle.group.members
+      .map((m) => m.userId)
+      .filter((id) => id !== cycle.collectorUserId);
+
+    return nonCollectorMemberIds.every((userId) =>
+      cycle.contributions.some(
+        (c) =>
+          c.payerUserId === userId && c.status === ContributionStatus.confirmed,
+      ),
+    );
+  }
+
   async summary(cycleId: string) {
     const cycle = await this.prisma.cycle.findUnique({
       where: { id: cycleId },
@@ -246,7 +283,7 @@ export class CyclesService {
           userId: member.userId,
           name: getFullName(member.user),
           email: member.user.email,
-          amount: contribution?.amount ?? cycle.group.contributionAmount,
+          amount: cycle.group.contributionAmount,
           contribution: contribution ?? null,
           displayStatus: deriveContributionDisplayStatus(
             contribution,
