@@ -79,10 +79,13 @@ pnpm start        # one-shot
 pnpm start:prod   # migrate + run dist
 pnpm build        # prisma generate && nest build
 pnpm lint         # eslint (writes fixes)
+pnpm lint:check   # eslint without writing (used in CI)
 pnpm test         # unit tests (Jest)
 pnpm test:e2e     # e2e tests (needs DATABASE_URL)
 pnpm test:cov     # coverage
 ```
+
+GitHub Actions runs `lint:check`, unit tests, typecheck, and `pnpm build` on every push and pull request to `main` / `dev`. Jest e2e is not part of CI (it needs `DATABASE_URL`).
 
 ## Auth
 
