@@ -4,8 +4,6 @@ NestJS API for **Pocket Circle** — coordinating Ajo / rotating savings groups 
 
 The API does **not** hold or move money. It tracks groups, cycles, contributions (with receipt uploads), invites, and notifications. The Next.js app talks to this API through a same-origin BFF.
 
-Author / maintainer: Senior Developer
-
 ## Stack
 
 - NestJS 11 + TypeScript
@@ -36,17 +34,17 @@ pnpm start:dev
 
 See `.env.example`. Required / used variables:
 
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | Postgres connection string (required) |
-| `JWT_SECRET` | JWT signing secret (falls back to a dev default) |
-| `PORT` | HTTP port (default `4001`) |
-| `FRONTEND_URL` | Public origin of the Next.js app, used in invite and reset links (default `http://localhost:3000`) |
-| `PAYSTACK_SECRET_KEY` | Bank list + account-name resolve |
-| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Receipt uploads |
-| `RESEND_API_KEY` | Resend API key. If unset, emails are not delivered and the payload is still returned |
-| `RESEND_FROM_EMAIL` | From address (default `Pocket Circle <onboarding@resend.dev>`) |
-| `RESEND_DEMO_MODE` | Default **true**. Set to `false` only to treat sends as live |
+| Variable                                                                 | Purpose                                                                                            |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                           | Postgres connection string (required)                                                              |
+| `JWT_SECRET`                                                             | JWT signing secret (falls back to a dev default)                                                   |
+| `PORT`                                                                   | HTTP port (default `4001`)                                                                         |
+| `FRONTEND_URL`                                                           | Public origin of the Next.js app, used in invite and reset links (default `http://localhost:3000`) |
+| `PAYSTACK_SECRET_KEY`                                                    | Bank list + account-name resolve                                                                   |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Receipt uploads                                                                                    |
+| `RESEND_API_KEY`                                                         | Resend API key. If unset, emails are not delivered and the payload is still returned               |
+| `RESEND_FROM_EMAIL`                                                      | From address (default `Pocket Circle <onboarding@resend.dev>`)                                     |
+| `RESEND_DEMO_MODE`                                                       | Default **true**. Set to `false` only to treat sends as live                                       |
 
 ## Project structure
 
