@@ -96,7 +96,8 @@ model User {
   invitesSent     Invite[]
   activity        ActivityEvent[]    @relation("actor")
   targetedIn      ActivityEvent[]    @relation("target")
-  notifications   Notification[]
+  notifications         Notification[]
+  passwordResetTokens   PasswordResetToken[]
 }
 
 model Group {
@@ -184,6 +185,20 @@ model ActivityEvent {
   actor  User   @relation("actor", fields: [actorUserId], references: [id])
   target User?  @relation("target", fields: [targetUserId], references: [id])
   cycle  Cycle? @relation(fields: [cycleId], references: [id])
+}
+
+model PasswordResetToken {
+  id           String    @id @default(uuid())
+  userId       String
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  usedAt       DateTime?
+  supersededAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Notification {

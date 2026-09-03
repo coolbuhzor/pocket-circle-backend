@@ -1,10 +1,7 @@
 import { ContributionStatus } from '../../../generated/prisma/enums';
 
 export type ContributionDisplayStatus =
-  | 'paid'
-  | 'disputed'
-  | 'pending'
-  | 'overdue';
+  'paid' | 'disputed' | 'pending' | 'overdue';
 
 export function deriveContributionDisplayStatus(
   contribution: { status: ContributionStatus } | null | undefined,

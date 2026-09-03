@@ -11,21 +11,28 @@ Inventory of the NestJS API as implemented. Global prefix: `/api/v1`.
 
 | Method | Full path | Auth required? | Guard(s) applied | Request body shape | Success response shape |
 |---|---|---|---|---|---|
-| POST | `/api/v1/auth/signup` | No | none (`@Public`) | `SignupDto: { name: string, email: string, password: string (min 8), bankName: string, accountNumber: string (exactly 10 digits) }` | `{ user: UserPublic, accessToken: string }` |
+| POST | `/api/v1/auth/signup` | No | none (`@Public`) | `SignupDto: { firstName, lastName, middleName?, email, password (min 8), bankName, bankCode, accountNumber (10 digits) }` | `{ user: UserPublic, accessToken: string }` |
 | POST | `/api/v1/auth/login` | No | none (`@Public`) | `LoginDto: { email: string, password: string }` | `{ user: UserPublic, accessToken: string }` |
+| POST | `/api/v1/auth/forgot-password` | No | none (`@Public`) | `{ email: string }` | `{ ok: true, demoMode, delivered, deliveryNote, deliveryError, email: { to, subject, body } }` |
+| POST | `/api/v1/auth/reset-password` | No | none (`@Public`) | `{ token: string, password: string (min 8) }` | `{ ok: true }` — 400 with distinct messages for invalid / expired / already-used tokens |
 | POST | `/api/v1/auth/logout` | Yes | `JwtAuthGuard` (global) | none | `{ ok: true }` |
 | GET | `/api/v1/me` | Yes | `JwtAuthGuard` (global) | none | `UserPublic` |
-| PATCH | `/api/v1/me` | Yes | `JwtAuthGuard` (global) | `UpdateMeDto: { name?: string, email?: string, bankName?: string, accountNumber?: string (10 digits), notifyEmail?: boolean, notifyWhatsApp?: boolean }` | `UserPublic` |
+| PATCH | `/api/v1/me` | Yes | `JwtAuthGuard` (global) | `UpdateMeDto: { firstName?, lastName?, middleName?, email?, bankName?, bankCode?, accountNumber? (10 digits), notifyEmail?, notifyWhatsApp? }` | `UserPublic` |
 
 `UserPublic` (from `AuthService` `userPublicSelect` — password never returned):
 
 ```
 {
   id: string
+  firstName: string
+  lastName: string
+  middleName: string | null
   name: string
   email: string
   bankName: string
+  bankCode: string
   accountNumber: string
+  bankVerified: boolean
   notifyEmail: boolean
   notifyWhatsApp: boolean
   isSuperAdmin: boolean
@@ -390,7 +397,7 @@ Same login as any user. `user.isSuperAdmin` (and JWT-validated `req.user.isSuper
 
 ### Gaps
 
-- **No password change / reset** — `UpdateMeDto` and auth routes do not support updating `password` after signup.
+- **No in-app password change** — `UpdateMeDto` cannot update `password`; use `POST /auth/forgot-password` then `POST /auth/reset-password`.
 - **No self-leave / leave-group endpoint** — `DELETE /groups/:id/members/:userId` explicitly rejects removing yourself; no alternate leave route exists.
 - **No avatar field** — original Users module brief mentioned resolving “names/avatars”; the schema and `GET /users` responses have no avatar URL.
 - **No API to grant/revoke `isSuperAdmin`** — intentional (DB-only), not a missing feature to add via HTTP.

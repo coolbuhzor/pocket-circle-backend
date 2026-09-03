@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { AuthedRequest } from '../types/authed-request';
+import { routeParam, toAuthedMembership } from '../types/authed-request';
 import {
   GROUP_ID_PARAM_KEY,
   RESOLVE_GROUP_FROM_KEY,
@@ -20,8 +22,8 @@ export class GroupMemberGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const userId = request.user?.id as string | undefined;
+    const request = context.switchToHttp().getRequest<AuthedRequest>();
+    const userId = request.user?.id;
     if (!userId) {
       throw new NotFoundException('Group not found');
     }
@@ -40,13 +42,17 @@ export class GroupMemberGuard implements CanActivate {
     }
 
     request.groupId = groupId;
-    request.membership = membership;
+    const authedMembership = toAuthedMembership(membership);
+    if (!authedMembership) {
+      throw new NotFoundException('Group not found');
+    }
+    request.membership = authedMembership;
     return true;
   }
 
   private async resolveGroupId(
     context: ExecutionContext,
-    request: { params: Record<string, string> },
+    request: AuthedRequest,
   ): Promise<string | null> {
     const resolveFrom =
       this.reflector.getAllAndOverride<ResolveGroupFrom>(
@@ -55,23 +61,28 @@ export class GroupMemberGuard implements CanActivate {
       ) ?? 'param';
 
     if (resolveFrom === 'cycle') {
-      const cycleId = request.params.id;
+      const cycleId = routeParam(request, 'id');
       if (!cycleId) return null;
       const cycle = await this.prisma.cycle.findUnique({
         where: { id: cycleId },
         select: { groupId: true },
       });
-      return cycle?.groupId ?? null;
+      const groupId = (cycle as unknown as { groupId?: string } | null)
+        ?.groupId;
+      return typeof groupId === 'string' ? groupId : null;
     }
 
     if (resolveFrom === 'contribution') {
-      const contributionId = request.params.id;
+      const contributionId = routeParam(request, 'id');
       if (!contributionId) return null;
       const contribution = await this.prisma.contribution.findUnique({
         where: { id: contributionId },
         select: { cycle: { select: { groupId: true } } },
       });
-      return contribution?.cycle.groupId ?? null;
+      const groupId = (
+        contribution as unknown as { cycle?: { groupId?: string } } | null
+      )?.cycle?.groupId;
+      return typeof groupId === 'string' ? groupId : null;
     }
 
     const paramName =
@@ -80,6 +91,8 @@ export class GroupMemberGuard implements CanActivate {
         context.getClass(),
       ]) ?? 'id';
 
-    return request.params[paramName] ?? request.params.groupId ?? null;
+    return (
+      routeParam(request, paramName) ?? routeParam(request, 'groupId') ?? null
+    );
   }
 }

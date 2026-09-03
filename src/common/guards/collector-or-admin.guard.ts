@@ -8,6 +8,12 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Role, CycleStatus } from '../../../generated/prisma/enums';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { AuthedCycle, AuthedRequest } from '../types/authed-request';
+import {
+  routeParam,
+  toAuthedCycle,
+  toAuthedMembership,
+} from '../types/authed-request';
 import {
   CYCLE_ID_PARAM_KEY,
   GROUP_ID_PARAM_KEY,
@@ -23,8 +29,8 @@ export class CollectorOrAdminGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const userId = request.user?.id as string | undefined;
+    const request = context.switchToHttp().getRequest<AuthedRequest>();
+    const userId = request.user?.id;
     if (!userId) {
       throw new ForbiddenException('Collector or admin access required');
     }
@@ -48,7 +54,10 @@ export class CollectorOrAdminGuard implements CanActivate {
     });
 
     if (membership?.role === Role.admin) {
-      request.membership = membership;
+      const authedMembership = toAuthedMembership(membership);
+      if (authedMembership) {
+        request.membership = authedMembership;
+      }
       return true;
     }
 
@@ -57,8 +66,8 @@ export class CollectorOrAdminGuard implements CanActivate {
 
   private async resolveCycle(
     context: ExecutionContext,
-    request: { params: Record<string, string> },
-  ) {
+    request: AuthedRequest,
+  ): Promise<AuthedCycle | null> {
     const resolveFrom =
       this.reflector.getAllAndOverride<ResolveCycleFrom>(
         RESOLVE_CYCLE_FROM_KEY,
@@ -66,13 +75,13 @@ export class CollectorOrAdminGuard implements CanActivate {
       ) ?? 'param';
 
     if (resolveFrom === 'contribution') {
-      const contributionId = request.params.id;
+      const contributionId = routeParam(request, 'id');
       if (!contributionId) return null;
       const contribution = await this.prisma.contribution.findUnique({
         where: { id: contributionId },
         include: { cycle: true },
       });
-      return contribution?.cycle ?? null;
+      return toAuthedCycle(contribution?.cycle);
     }
 
     if (resolveFrom === 'activeByGroup') {
@@ -82,11 +91,12 @@ export class CollectorOrAdminGuard implements CanActivate {
           context.getClass(),
         ]) ?? 'id';
       const groupId =
-        request.params[groupParam] ?? request.params.groupId ?? null;
+        routeParam(request, groupParam) ?? routeParam(request, 'groupId');
       if (!groupId) return null;
-      return this.prisma.cycle.findFirst({
+      const cycle = await this.prisma.cycle.findFirst({
         where: { groupId, status: CycleStatus.active },
       });
+      return toAuthedCycle(cycle);
     }
 
     const paramName =
@@ -95,8 +105,11 @@ export class CollectorOrAdminGuard implements CanActivate {
         context.getClass(),
       ]) ?? 'id';
 
-    const cycleId = request.params[paramName];
+    const cycleId = routeParam(request, paramName);
     if (!cycleId) return null;
-    return this.prisma.cycle.findUnique({ where: { id: cycleId } });
+    const cycle = await this.prisma.cycle.findUnique({
+      where: { id: cycleId },
+    });
+    return toAuthedCycle(cycle);
   }
 }

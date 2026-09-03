@@ -13,8 +13,7 @@ export type ResolveAccountFailure = {
 };
 
 export type ResolveAccountResult =
-  | ResolveAccountSuccess
-  | ResolveAccountFailure;
+  ResolveAccountSuccess | ResolveAccountFailure;
 
 const BANKS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PAYSTACK_BASE = 'https://api.paystack.co';
@@ -42,7 +41,9 @@ export class BanksService {
 
     const secret = this.getSecretKey();
     if (!secret) {
-      this.logger.warn('PAYSTACK_SECRET_KEY is not set; returning empty bank list');
+      this.logger.warn(
+        'PAYSTACK_SECRET_KEY is not set; returning empty bank list',
+      );
       return [];
     }
 
@@ -102,13 +103,16 @@ export class BanksService {
         account_number: accountNumber,
         bank_code: bankCode,
       });
-      const res = await fetch(`${PAYSTACK_BASE}/bank/resolve?${qs.toString()}`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${secret}`,
-          Accept: 'application/json',
+      const res = await fetch(
+        `${PAYSTACK_BASE}/bank/resolve?${qs.toString()}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${secret}`,
+            Accept: 'application/json',
+          },
         },
-      });
+      );
 
       if (!res.ok) {
         return { resolved: false };

@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { AuthedCycle, AuthedRequest } from '../types/authed-request';
+import { routeParam, toAuthedCycle } from '../types/authed-request';
 import {
   CYCLE_ID_PARAM_KEY,
   RESOLVE_CYCLE_FROM_KEY,
@@ -21,8 +23,8 @@ export class CycleCollectorGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const userId = request.user?.id as string | undefined;
+    const request = context.switchToHttp().getRequest<AuthedRequest>();
+    const userId = request.user?.id;
     if (!userId) {
       throw new ForbiddenException('Collector access required');
     }
@@ -32,19 +34,26 @@ export class CycleCollectorGuard implements CanActivate {
       throw new NotFoundException('Cycle not found');
     }
 
-    if (cycle.collectorUserId !== userId) {
+    const collectorUserId: string = cycle.collectorUserId;
+    const groupId: string = cycle.groupId;
+
+    if (collectorUserId !== userId) {
       throw new ForbiddenException('Collector access required');
     }
 
-    request.cycle = cycle;
-    request.groupId = cycle.groupId;
+    request.cycle = {
+      id: cycle.id,
+      groupId,
+      collectorUserId,
+    };
+    request.groupId = groupId;
     return true;
   }
 
   private async resolveCycle(
     context: ExecutionContext,
-    request: { params: Record<string, string>; contribution?: unknown },
-  ) {
+    request: AuthedRequest,
+  ): Promise<AuthedCycle | null> {
     const resolveFrom =
       this.reflector.getAllAndOverride<ResolveCycleFrom>(
         RESOLVE_CYCLE_FROM_KEY,
@@ -52,7 +61,7 @@ export class CycleCollectorGuard implements CanActivate {
       ) ?? 'param';
 
     if (resolveFrom === 'contribution') {
-      const contributionId = request.params.id;
+      const contributionId = routeParam(request, 'id');
       if (!contributionId) return null;
       const contribution = await this.prisma.contribution.findUnique({
         where: { id: contributionId },
@@ -60,7 +69,7 @@ export class CycleCollectorGuard implements CanActivate {
       });
       if (!contribution) return null;
       request.contribution = contribution;
-      return contribution.cycle;
+      return toAuthedCycle(contribution.cycle);
     }
 
     const paramName =
@@ -69,9 +78,12 @@ export class CycleCollectorGuard implements CanActivate {
         context.getClass(),
       ]) ?? 'id';
 
-    const cycleId = request.params[paramName];
+    const cycleId = routeParam(request, paramName);
     if (!cycleId) return null;
 
-    return this.prisma.cycle.findUnique({ where: { id: cycleId } });
+    const cycle = await this.prisma.cycle.findUnique({
+      where: { id: cycleId },
+    });
+    return toAuthedCycle(cycle);
   }
 }
