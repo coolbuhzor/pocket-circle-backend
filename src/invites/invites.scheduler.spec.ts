@@ -15,7 +15,7 @@ describe('InvitesSchedulerService', () => {
     expect(updateMany).toHaveBeenCalledWith({
       where: {
         status: InviteStatus.active,
-        expiresAt: { lt: expect.any(Date) },
+        expiresAt: { lt: expect.any(Date) as Date },
       },
       data: { status: InviteStatus.expired },
     });

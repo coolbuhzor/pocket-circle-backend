@@ -1,10 +1,7 @@
 import { InviteStatus } from '../../../generated/prisma/enums';
 
 export type InviteEffectiveStatus =
-  | 'accepted'
-  | 'revoked'
-  | 'expired'
-  | 'pending';
+  'accepted' | 'revoked' | 'expired' | 'pending';
 
 export function deriveInviteEffectiveStatus(
   invite: { status: InviteStatus; expiresAt: Date },

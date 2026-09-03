@@ -637,9 +637,7 @@ export class AdminService {
           ) / totalGroups;
 
     const disputeRate =
-      totalContributions === 0
-        ? 0
-        : disputedContributions / totalContributions;
+      totalContributions === 0 ? 0 : disputedContributions / totalContributions;
 
     let averageTimeToPaymentMs: number | null = null;
     if (confirmedWithTiming.length > 0) {

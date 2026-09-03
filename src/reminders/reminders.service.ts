@@ -3,10 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  ActivityType,
-  NotificationType,
-} from '../../generated/prisma/enums';
+import { ActivityType, NotificationType } from '../../generated/prisma/enums';
 import { ActivityService } from '../activity/activity.service';
 import { getFullName } from '../common/helpers/user-name';
 import { userNameSelect } from '../common/helpers/user-select';

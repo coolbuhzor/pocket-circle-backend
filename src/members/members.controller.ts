@@ -30,10 +30,7 @@ export class MembersController {
 
   @Post(':userId/make-admin')
   @ApiOperation({ summary: 'Promote a member to admin' })
-  makeAdmin(
-    @Param('id') groupId: string,
-    @Param('userId') userId: string,
-  ) {
+  makeAdmin(@Param('id') groupId: string, @Param('userId') userId: string) {
     return this.membersService.makeAdmin(groupId, userId);
   }
 

@@ -3,7 +3,9 @@ import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AdminListQueryDto {
-  @ApiPropertyOptional({ description: 'Search by name/email (users) or name (groups)' })
+  @ApiPropertyOptional({
+    description: 'Search by name/email (users) or name (groups)',
+  })
   @IsOptional()
   @IsString()
   search?: string;

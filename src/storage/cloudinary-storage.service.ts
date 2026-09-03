@@ -30,14 +30,16 @@ export class CloudinaryStorageService
           folder: 'pocket-circle/receipts',
           resource_type: 'auto',
           ...(isImage && {
-            transformation: [
-              { quality: 'auto:good', fetch_format: 'auto' },
-            ],
+            transformation: [{ quality: 'auto:good', fetch_format: 'auto' }],
           }),
         },
         (error, result?: UploadApiResponse) => {
           if (error || !result) {
-            reject(error ?? new Error('Cloudinary upload failed'));
+            reject(
+              error instanceof Error
+                ? error
+                : new Error('Cloudinary upload failed'),
+            );
             return;
           }
 

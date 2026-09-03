@@ -107,9 +107,7 @@ export class CyclesService {
       (m) => m.userId === activeCycle.collectorUserId,
     );
     const nextIndex =
-      currentIndex === -1
-        ? 0
-        : (currentIndex + 1) % group.members.length;
+      currentIndex === -1 ? 0 : (currentIndex + 1) % group.members.length;
     const nextCollector = group.members[nextIndex];
     const now = new Date();
     const periodEnd = computePeriodEnd(now, group.frequency);

@@ -156,6 +156,15 @@ export class GroupsService {
     const invitesSent: Array<{
       email: string;
       matchedExistingUser: boolean;
+      demoMode: boolean;
+      delivered: boolean;
+      deliveryNote: string;
+      deliveryError: string | null;
+      emailPayload: {
+        to: string;
+        subject: string;
+        body: string;
+      } | null;
     }> = [];
 
     for (const email of emails) {
@@ -165,11 +174,16 @@ export class GroupsService {
       invitesSent.push({
         email: invite.inviteeEmail ?? email,
         matchedExistingUser: invite.matchedExistingUser,
+        demoMode: invite.demoMode,
+        delivered: invite.delivered,
+        deliveryNote: invite.deliveryNote,
+        deliveryError: invite.deliveryError,
+        emailPayload: invite.email,
       });
     }
 
     return {
-      ...this.enrichGroup(group as GroupDetail, userId),
+      ...this.enrichGroup(group, userId),
       invitesSent,
     };
   }
@@ -190,9 +204,7 @@ export class GroupsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return groups.map((group) =>
-      this.enrichGroup(group as GroupDetail, userId),
-    );
+    return groups.map((group) => this.enrichGroup(group, userId));
   }
 
   async findOne(groupId: string, userId: string) {
@@ -203,7 +215,7 @@ export class GroupsService {
     if (!group) {
       throw new NotFoundException('Group not found');
     }
-    return this.enrichGroup(group as GroupDetail, userId);
+    return this.enrichGroup(group, userId);
   }
 
   async update(groupId: string, dto: UpdateGroupDto) {
@@ -218,7 +230,7 @@ export class GroupsService {
       },
       include: groupDetailInclude,
     });
-    return this.enrichGroup(group as GroupDetail);
+    return this.enrichGroup(group);
   }
 
   async remove(groupId: string) {
@@ -265,10 +277,7 @@ export class GroupsService {
       const displayStatus = isCollector
         ? null
         : activeCycle
-          ? deriveContributionDisplayStatus(
-              contribution,
-              activeCycle.periodEnd,
-            )
+          ? deriveContributionDisplayStatus(contribution, activeCycle.periodEnd)
           : null;
 
       return {

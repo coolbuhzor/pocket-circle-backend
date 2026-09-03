@@ -1,9 +1,5 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { SuperAdminGuard } from '../common/guards/super-admin.guard';
 import { AdminService } from './admin.service';
@@ -53,7 +49,9 @@ export class AdminController {
   }
 
   @Get('stats/financial')
-  @ApiOperation({ summary: 'Confirmed volume by group and frequency (super admin)' })
+  @ApiOperation({
+    summary: 'Confirmed volume by group and frequency (super admin)',
+  })
   statsFinancial() {
     return this.adminService.statsFinancial();
   }

@@ -11,7 +11,10 @@ import {
 } from '../../generated/prisma/enums';
 import { ActivityService } from '../activity/activity.service';
 import { getFullName, withDisplayName } from '../common/helpers/user-name';
-import { userNameSelect, userSummarySelect } from '../common/helpers/user-select';
+import {
+  userNameSelect,
+  userSummarySelect,
+} from '../common/helpers/user-select';
 import { CyclesService } from '../cycles/cycles.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -184,10 +187,7 @@ export class ContributionsService {
     );
 
     if (await this.cyclesService.isCycleFullyPaid(contribution.cycleId)) {
-      await this.cyclesService.closeCycle(
-        contribution.cycleId,
-        reviewerUserId,
-      );
+      await this.cyclesService.closeCycle(contribution.cycleId, reviewerUserId);
     }
 
     return updated;

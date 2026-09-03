@@ -6,6 +6,17 @@ import { Frequency, InviteStatus } from '../generated/prisma/enums';
 import { AppModule } from '../src/app.module';
 import { InvitesSchedulerService } from '../src/invites/invites.scheduler';
 import { PrismaService } from '../src/prisma/prisma.service';
+import {
+  asBody,
+  containing,
+  containingObject,
+  type E2eBody,
+  type E2eList,
+  type InviteCreateBody,
+  type InviteViewBody,
+  type ResetErrorBody,
+  type SignupBody,
+} from './as-body';
 
 describe('Invites (e2e)', () => {
   let app: INestApplication<App>;
@@ -46,8 +57,8 @@ describe('Invites (e2e)', () => {
   });
 
   afterAll(async () => {
-    const groupIds = [groupId, memberEmailsGroupId].filter(
-      (id): id is string => Boolean(id),
+    const groupIds = [groupId, memberEmailsGroupId].filter((id): id is string =>
+      Boolean(id),
     );
 
     for (const id of groupIds) {
@@ -88,8 +99,9 @@ describe('Invites (e2e)', () => {
           accountNumber,
         })
         .expect(201);
-      expect(res.body.accessToken).toBeDefined();
-      return res.body.accessToken as string;
+      const signup = asBody<SignupBody>(res);
+      expect(signup.accessToken).toBeDefined();
+      return signup.accessToken;
     };
 
     adminToken = await signup(
@@ -126,9 +138,9 @@ describe('Invites (e2e)', () => {
       })
       .expect(201);
 
-    groupId = res.body.id;
+    groupId = asBody<E2eBody>(res).id;
     expect(groupId).toBeDefined();
-    expect(res.body.invitesSent).toEqual([]);
+    expect(asBody<E2eBody>(res).invitesSent).toEqual([]);
   });
 
   it('creates a group with memberEmails and reuses invite logic', async () => {
@@ -150,16 +162,31 @@ describe('Invites (e2e)', () => {
       })
       .expect(201);
 
-    memberEmailsGroupId = res.body.id;
-    expect(res.body.invitesSent).toEqual(
+    memberEmailsGroupId = asBody<E2eBody>(res).id;
+    expect(asBody<E2eBody>(res).invitesSent).toEqual(
       expect.arrayContaining([
-        { email: inviteeEmail, matchedExistingUser: true },
-        { email: unknownEmail, matchedExistingUser: false },
+        containingObject({
+          email: inviteeEmail,
+          matchedExistingUser: true,
+          demoMode: true,
+          emailPayload: containingObject({
+            to: inviteeEmail,
+            subject: containing('invited to join'),
+          }),
+        }),
+        containingObject({
+          email: unknownEmail,
+          matchedExistingUser: false,
+          demoMode: true,
+          emailPayload: containingObject({
+            to: unknownEmail,
+          }),
+        }),
       ]),
     );
-    expect(res.body.invitesSent).toHaveLength(2);
+    expect(asBody<E2eBody>(res).invitesSent).toHaveLength(2);
     expect(
-      res.body.invitesSent.some(
+      asBody<E2eBody>(res).invitesSent.some(
         (row: { email: string }) => row.email === adminEmail,
       ),
     ).toBe(false);
@@ -180,14 +207,23 @@ describe('Invites (e2e)', () => {
       .send({ email: inviteeEmail })
       .expect(201);
 
-    expect(res.body).toMatchObject({
+    expect(asBody<E2eBody>(res)).toMatchObject({
       groupId,
       inviteeEmail,
       matchedExistingUser: true,
       status: InviteStatus.active,
+      demoMode: true,
+      deliveryNote: containing('Resend demo mode'),
+      email: {
+        to: inviteeEmail,
+        subject: containing('invited to join'),
+      },
     });
-    expect(res.body.token).toBeDefined();
-    createdInviteToken = res.body.token;
+    expect(asBody<E2eBody>(res).token).toBeDefined();
+    expect(asBody<E2eBody>(res).email?.body).toContain(
+      `/invite/${asBody<E2eBody>(res).token}`,
+    );
+    createdInviteToken = asBody<E2eBody>(res).token;
 
     const notification = await prisma.notification.findFirst({
       where: {
@@ -206,10 +242,10 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(asBody<E2eList>(res))).toBe(true);
+    expect(asBody<E2eList>(res).length).toBeGreaterThanOrEqual(1);
 
-    const invite = res.body.find(
+    const invite = asBody<E2eList>(res).find(
       (row: { token: string }) => row.token === createdInviteToken,
     );
     expect(invite).toMatchObject({
@@ -227,7 +263,7 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${outsiderToken}`)
       .expect(403);
 
-    expect(res.body.message).toContain(
+    expect(asBody<E2eBody>(res).message).toContain(
       'This invite was sent to a different email address',
     );
   });
@@ -237,12 +273,12 @@ describe('Invites (e2e)', () => {
       .get(`/invites/${createdInviteToken}`)
       .expect(200);
 
-    expect(view.body).toMatchObject({
+    expect(asBody<InviteViewBody>(view)).toMatchObject({
       token: createdInviteToken,
       status: InviteStatus.active,
       group: { id: groupId },
     });
-    expect(view.body.inviter.name).toBe('Invite Admin');
+    expect(asBody<InviteViewBody>(view).inviter?.name).toBe('Invite Admin');
 
     await request(app.getHttpServer())
       .post(`/invites/${createdInviteToken}/accept`)
@@ -254,7 +290,7 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
-    const accepted = list.body.find(
+    const accepted = asBody<E2eList>(list).find(
       (row: { token: string }) => row.token === createdInviteToken,
     );
     expect(accepted).toMatchObject({
@@ -267,7 +303,7 @@ describe('Invites (e2e)', () => {
       .get(`/invites/${createdInviteToken}`)
       .expect(200);
 
-    expect(viewAccepted.body).toMatchObject({
+    expect(asBody<InviteViewBody>(viewAccepted)).toMatchObject({
       token: createdInviteToken,
       status: InviteStatus.accepted,
       group: { id: groupId },
@@ -281,10 +317,11 @@ describe('Invites (e2e)', () => {
       .send({})
       .expect(201);
 
-    expect(createRes.body.inviteeEmail).toBeNull();
+    expect(asBody<InviteCreateBody>(createRes).inviteeEmail).toBeNull();
+    expect(asBody<InviteCreateBody>(createRes).email).toBeNull();
 
     await request(app.getHttpServer())
-      .post(`/invites/${createRes.body.token}/accept`)
+      .post(`/invites/${asBody<InviteCreateBody>(createRes).token}/accept`)
       .set('Authorization', `Bearer ${outsiderToken}`)
       .expect(201);
   });
@@ -296,8 +333,18 @@ describe('Invites (e2e)', () => {
       .send({ email: `nobody.${suffix}@example.com` })
       .expect(201);
 
-    expect(res.body.matchedExistingUser).toBe(false);
-    expect(res.body.inviteeEmail).toBe(`nobody.${suffix}@example.com`);
+    expect(asBody<E2eBody>(res).matchedExistingUser).toBe(false);
+    expect(asBody<E2eBody>(res).inviteeEmail).toBe(
+      `nobody.${suffix}@example.com`,
+    );
+    expect(asBody<E2eBody>(res).demoMode).toBe(true);
+    expect(asBody<E2eBody>(res).email).toMatchObject({
+      to: `nobody.${suffix}@example.com`,
+      subject: containing('invited to join'),
+    });
+    expect(asBody<E2eBody>(res).email?.body).toContain(
+      `/invite/${asBody<E2eBody>(res).token}`,
+    );
   });
 
   it('derives expired effectiveStatus and cron flips stored status', async () => {
@@ -307,7 +354,7 @@ describe('Invites (e2e)', () => {
       .send({})
       .expect(201);
 
-    const staleToken = createRes.body.token as string;
+    const staleToken = asBody<InviteCreateBody>(createRes).token;
     await prisma.invite.update({
       where: { token: staleToken },
       data: { expiresAt: new Date(Date.now() - 60_000) },
@@ -318,11 +365,11 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
-    const before = listBeforeCron.body.find(
+    const before = asBody<E2eList>(listBeforeCron).find(
       (row: { token: string }) => row.token === staleToken,
     );
-    expect(before.status).toBe(InviteStatus.active);
-    expect(before.effectiveStatus).toBe('expired');
+    expect(before?.status).toBe(InviteStatus.active);
+    expect(before?.effectiveStatus).toBe('expired');
 
     await scheduler.expireStaleInvites();
 
@@ -336,7 +383,7 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
-    const after = listAfterCron.body.find(
+    const after = asBody<E2eList>(listAfterCron).find(
       (row: { token: string }) => row.token === staleToken,
     );
     expect(after).toMatchObject({
@@ -359,14 +406,14 @@ describe('Invites (e2e)', () => {
       .send({ email: `revoke.${suffix}@example.com` })
       .expect(201);
 
-    const token = createRes.body.token as string;
+    const token = asBody<InviteCreateBody>(createRes).token;
 
     const revokeRes = await request(app.getHttpServer())
       .post(`/groups/${groupId}/invites/${token}/revoke`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(201);
 
-    expect(revokeRes.body).toMatchObject({
+    expect(asBody<InviteCreateBody>(revokeRes)).toMatchObject({
       token,
       status: InviteStatus.revoked,
       effectiveStatus: 'revoked',
@@ -377,7 +424,7 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${inviteeToken}`)
       .expect(400);
 
-    expect(acceptRes.body.message).toContain(
+    expect(asBody<ResetErrorBody>(acceptRes).message).toContain(
       'This invite has been revoked by the group admin',
     );
   });
@@ -396,7 +443,7 @@ describe('Invites (e2e)', () => {
         accountNumber: '2222333344',
       })
       .expect(201);
-    const acceptorToken = signupRes.body.accessToken as string;
+    const acceptorToken = asBody<SignupBody>(signupRes).accessToken;
 
     const createRes = await request(app.getHttpServer())
       .post(`/groups/${groupId}/invites`)
@@ -404,7 +451,7 @@ describe('Invites (e2e)', () => {
       .send({})
       .expect(201);
 
-    const token = createRes.body.token as string;
+    const token = asBody<InviteCreateBody>(createRes).token;
 
     await request(app.getHttpServer())
       .post(`/invites/${token}/accept`)
@@ -416,11 +463,13 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(400);
 
-    expect(revokeRes.body.message).toContain(
+    expect(asBody<ResetErrorBody>(revokeRes).message).toContain(
       "This invite has already been accepted and can't be revoked",
     );
 
-    await prisma.user.delete({ where: { email: acceptorEmail } }).catch(() => undefined);
+    await prisma.user
+      .delete({ where: { email: acceptorEmail } })
+      .catch(() => undefined);
   });
 
   it('returns invite data for expired and revoked tokens', async () => {
@@ -429,7 +478,7 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({})
       .expect(201);
-    const expiredToken = expiredRes.body.token as string;
+    const expiredToken = asBody<InviteCreateBody>(expiredRes).token;
 
     await prisma.invite.update({
       where: { token: expiredToken },
@@ -443,7 +492,7 @@ describe('Invites (e2e)', () => {
       .get(`/invites/${expiredToken}`)
       .expect(200);
 
-    expect(viewExpired.body).toMatchObject({
+    expect(asBody<InviteViewBody>(viewExpired)).toMatchObject({
       token: expiredToken,
       status: InviteStatus.expired,
       group: { id: groupId },
@@ -454,7 +503,7 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({})
       .expect(201);
-    const revokedToken = revokedRes.body.token as string;
+    const revokedToken = asBody<InviteCreateBody>(revokedRes).token;
 
     await request(app.getHttpServer())
       .post(`/groups/${groupId}/invites/${revokedToken}/revoke`)
@@ -465,7 +514,7 @@ describe('Invites (e2e)', () => {
       .get(`/invites/${revokedToken}`)
       .expect(200);
 
-    expect(viewRevoked.body).toMatchObject({
+    expect(asBody<InviteViewBody>(viewRevoked)).toMatchObject({
       token: revokedToken,
       status: InviteStatus.revoked,
       group: { id: groupId },
@@ -490,7 +539,7 @@ describe('Invites (e2e)', () => {
         accountNumber: '3333444455',
       })
       .expect(201);
-    expect(signupRes.body.accessToken).toBeDefined();
+    expect(asBody<SignupBody>(signupRes).accessToken).toBeDefined();
 
     const createRes = await request(app.getHttpServer())
       .post(`/groups/${groupId}/invites`)
@@ -498,7 +547,7 @@ describe('Invites (e2e)', () => {
       .send({ email: resendInviteeEmail })
       .expect(201);
 
-    const token = createRes.body.token as string;
+    const token = asBody<InviteCreateBody>(createRes).token;
 
     await prisma.invite.update({
       where: { token },
@@ -521,15 +570,22 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(201);
 
-    expect(resendRes.body).toMatchObject({
+    expect(asBody<InviteCreateBody>(resendRes)).toMatchObject({
       token,
       groupId,
       inviteeEmail: resendInviteeEmail,
       status: InviteStatus.active,
       matchedExistingUser: true,
       effectiveStatus: 'pending',
+      demoMode: true,
+      email: {
+        to: resendInviteeEmail,
+        subject: containing('invited to join'),
+      },
     });
-    expect(new Date(resendRes.body.expiresAt).getTime()).toBeGreaterThan(
+    const resent = asBody<InviteCreateBody>(resendRes);
+    expect(resent.email?.body).toContain(`/invite/${token}`);
+    expect(new Date(resent.expiresAt ?? 0).getTime()).toBeGreaterThan(
       beforeResend + 29 * 24 * 60 * 60 * 1000,
     );
 
@@ -546,7 +602,7 @@ describe('Invites (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(400);
 
-    expect(acceptRes.body.message).toContain(
+    expect(asBody<ResetErrorBody>(acceptRes).message).toContain(
       'This invite has already been accepted — no need to resend',
     );
 

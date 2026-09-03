@@ -11,6 +11,7 @@ import { BanksModule } from './banks/banks.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ContributionsModule } from './contributions/contributions.module';
 import { CyclesModule } from './cycles/cycles.module';
+import { EmailModule } from './email/email.module';
 import { GroupsModule } from './groups/groups.module';
 import { InvitesModule } from './invites/invites.module';
 import { MembersModule } from './members/members.module';
@@ -25,6 +26,7 @@ import { UsersModule } from './users/users.module';
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    EmailModule,
     StorageModule,
     AuthModule,
     BanksModule,

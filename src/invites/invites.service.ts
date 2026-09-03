@@ -15,7 +15,12 @@ import {
 import { ActivityService } from '../activity/activity.service';
 import { deriveInviteEffectiveStatus } from '../common/helpers/invite-effective-status';
 import { getFullName, withDisplayName } from '../common/helpers/user-name';
-import { userNameSelect, userSummarySelect } from '../common/helpers/user-select';
+import {
+  userNameSelect,
+  userSummarySelect,
+} from '../common/helpers/user-select';
+import { EmailService } from '../email/email.service';
+import { EmailSendResult, RESEND_DEMO_NOTE } from '../email/email.types';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInviteDto } from './dto/create-invite.dto';
@@ -26,6 +31,7 @@ export class InvitesService {
     private readonly prisma: PrismaService,
     private readonly activityService: ActivityService,
     private readonly notificationsService: NotificationsService,
+    private readonly emailService: EmailService,
   ) {}
 
   async create(
@@ -72,6 +78,14 @@ export class InvitesService {
       inviterName: getFullName(inviter),
     });
 
+    const emailSend = await this.sendInviteEmail({
+      inviteeEmail,
+      inviteToken: invite.token,
+      expiresAt: invite.expiresAt,
+      group,
+      inviterName: getFullName(inviter),
+    });
+
     return {
       token: invite.token,
       groupId: invite.groupId,
@@ -80,6 +94,7 @@ export class InvitesService {
       status: invite.status,
       inviteeEmail: invite.inviteeEmail,
       matchedExistingUser,
+      ...this.toEmailFields(emailSend),
     };
   }
 
@@ -210,6 +225,14 @@ export class InvitesService {
       inviterName: getFullName(invite.invitedBy),
     });
 
+    const emailSend = await this.sendInviteEmail({
+      inviteeEmail: updated.inviteeEmail,
+      inviteToken: updated.token,
+      expiresAt: updated.expiresAt,
+      group: invite.group,
+      inviterName: getFullName(invite.invitedBy),
+    });
+
     return {
       token: updated.token,
       groupId: updated.groupId,
@@ -219,6 +242,7 @@ export class InvitesService {
       inviteeEmail: updated.inviteeEmail,
       matchedExistingUser,
       effectiveStatus: deriveInviteEffectiveStatus(updated),
+      ...this.toEmailFields(emailSend),
     };
   }
 
@@ -375,5 +399,58 @@ export class InvitesService {
     );
 
     return true;
+  }
+
+  private async sendInviteEmail(params: {
+    inviteeEmail: string | null;
+    inviteToken: string;
+    expiresAt: Date;
+    group: { id: string; name: string; contributionAmount: number };
+    inviterName: string;
+  }): Promise<EmailSendResult | null> {
+    const { inviteeEmail, inviteToken, expiresAt, group, inviterName } = params;
+    if (!inviteeEmail) {
+      return null;
+    }
+
+    const inviteUrl = `${this.emailService.frontendUrl()}/invite/${inviteToken}`;
+    return this.emailService.send({
+      to: inviteeEmail,
+      subject: `You're invited to join ${group.name} on Pocket Circle`,
+      body: [
+        `${inviterName} invited you to join ${group.name} on Pocket Circle.`,
+        '',
+        `Contribution amount: ₦${group.contributionAmount.toLocaleString('en-NG')}.`,
+        '',
+        'Accept the invite:',
+        inviteUrl,
+        '',
+        `This link expires on ${expiresAt.toISOString()}.`,
+      ].join('\n'),
+    });
+  }
+
+  private toEmailFields(sent: EmailSendResult | null) {
+    if (!sent) {
+      return {
+        demoMode: this.emailService.isDemoMode(),
+        delivered: false,
+        deliveryNote: RESEND_DEMO_NOTE,
+        deliveryError: null as string | null,
+        email: null as {
+          to: string;
+          subject: string;
+          body: string;
+        } | null,
+      };
+    }
+
+    return {
+      demoMode: sent.demoMode,
+      delivered: sent.delivered,
+      deliveryNote: sent.deliveryNote,
+      deliveryError: sent.deliveryError,
+      email: sent.payload,
+    };
   }
 }
